@@ -6,6 +6,12 @@
     <title>Coord-X TRAMA | Transformador de Coordenadas Geodésicas</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      // Adiciona a configuração para o Tailwind usar a classe 'dark' para o tema escuro
+      tailwind.config = {
+        darkMode: 'class',
+      }
+    </script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -29,7 +35,7 @@
         .tab-btn.active { border-bottom: 2px solid var(--color-primary); color: var(--color-primary); font-weight: 600; }
     </style>
 </head>
-<body class="bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-200 font-sans antialiased transition-colors duration-300">
+<body class="bg-gray-50 dark:bg-gray-900 text-gray-800 dark:text-gray-200 font-sans antialiased transition-colors duration-300">
 
     <div id="app" class="flex flex-col h-screen">
         <!-- Cabeçalho -->
@@ -161,7 +167,10 @@
                 <div class="flex-grow p-4 flex flex-col min-h-0 bg-gray-100 dark:bg-gray-800">
                     <div class="flex justify-between items-center mb-2">
                         <h3 class="font-bold" data-lang="results">Resultados</h3>
-                        <div class="space-x-2">
+                        <div class="flex items-center space-x-2">
+                             <button id="toggle-input-markers-btn" class="p-2 text-xs bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 flex items-center">
+                                <!-- O conteúdo deste botão é gerenciado por JavaScript -->
+                            </button>
                             <button id="export-csv-btn" class="p-2 text-xs bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 flex items-center" disabled>
                                 <i data-lucide="file-down" class="w-4 h-4 mr-1"></i> CSV
                             </button>
@@ -218,6 +227,7 @@
             tabContents: document.querySelectorAll('.tab-content'),
             csvDelimiter: document.getElementById('csv-delimiter'),
             csvDecimal: document.getElementById('csv-decimal'),
+            toggleInputMarkersBtn: document.getElementById('toggle-input-markers-btn'),
         };
 
         // --- ESTADO DA APLICAÇÃO ---
@@ -231,7 +241,8 @@
             outputMarkers: L.layerGroup(),
             transformationType: 'Conversion', // 'Grade', 'Parameter', 'Conversion'
             inputCoord: 'GEO_DEC', // GEO_DEC, UTM, CART
-            outputCoord: 'UTM'
+            outputCoord: 'UTM',
+            showInputMarkers: true,
         };
 
         // --- CONFIGURAÇÕES E DADOS ---
@@ -278,6 +289,7 @@
                 importSettings: "Configurações de Importação", csvDelimiter: "Separador de Coluna", csvDecimal: "Separador Decimal",
                 comma: "Vírgula (,)", semicolon: "Ponto e Vírgula (;)", tab: "Tabulação (Tab)",
                 dot: "Ponto (.)", commaDecimal: "Vírgula (,)",
+                showInput: "Mostrar Entradas", hideInput: "Ocultar Entradas",
             },
             en: {
                 subtitle: "by Jairo Ivo C. Brito | TRAMA Lab - UFC",
@@ -304,6 +316,7 @@
                 importSettings: "Import Settings", csvDelimiter: "Column Delimiter", csvDecimal: "Decimal Separator",
                 comma: "Comma (,)", semicolon: "Semicolon (;)", tab: "Tab",
                 dot: "Dot (.)", commaDecimal: "Comma (,)",
+                showInput: "Show Inputs", hideInput: "Hide Inputs",
             }
         };
 
@@ -416,18 +429,32 @@
         // --- INICIALIZAÇÃO E LÓGICA DA UI ---
         
         function init() {
-            const theme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-            appState.theme = theme;
-            dom.html.classList.toggle('dark', theme === 'dark');
-            
             const lang = localStorage.getItem('language') || 'pt';
-            appState.lang = lang;
             dom.languageSwitcher.value = lang;
 
-            lucide.createIcons();
             initMap();
+            setupEventListeners();
             
-            dom.themeSwitcher.addEventListener('click', toggleTheme);
+            // Lógica de Tema refatorada e simplificada
+            const applyTheme = (theme) => {
+                appState.theme = theme;
+                dom.html.classList.toggle('dark', theme === 'dark');
+                lucide.createIcons();
+            };
+            
+            const savedTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            applyTheme(savedTheme);
+
+            dom.themeSwitcher.addEventListener('click', () => {
+                const newTheme = appState.theme === 'light' ? 'dark' : 'light';
+                localStorage.setItem('theme', newTheme);
+                applyTheme(newTheme);
+            });
+
+            setLanguage(lang); // Aplica o idioma e atualiza a UI
+        }
+
+        function setupEventListeners() {
             dom.languageSwitcher.addEventListener('change', (e) => setLanguage(e.target.value));
             dom.inputSystem.addEventListener('change', updateUI);
             dom.inputCoordType.addEventListener('change', updateUI);
@@ -439,8 +466,7 @@
             dom.exportCsvBtn.addEventListener('click', () => exportData('csv'));
             dom.exportTxtBtn.addEventListener('click', () => exportData('txt'));
             dom.tabBtns.forEach(btn => btn.addEventListener('click', switchTab));
-
-            updateUI();
+            dom.toggleInputMarkersBtn.addEventListener('click', toggleInputMarkers);
         }
 
         function applyLanguageStrings(lang) {
@@ -459,6 +485,7 @@
                 const key = el.dataset.langOpt;
                 if(strings[key]) el.label = strings[key];
             });
+            updateToggleMarkersButtonUI();
         }
 
         function setLanguage(lang) {
@@ -467,13 +494,6 @@
             document.documentElement.lang = lang.split('-')[0];
             applyLanguageStrings(lang);
             updateUI();
-        }
-
-        function toggleTheme() {
-            appState.theme = appState.theme === 'light' ? 'dark' : 'light';
-            dom.html.classList.toggle('dark');
-            localStorage.setItem('theme', appState.theme);
-            lucide.createIcons();
         }
         
         function updateUI() {
@@ -490,6 +510,7 @@
             appState.inputCoord = dom.inputCoordType.value;
             appState.outputCoord = dom.outputCoordType.value;
             updateTableHeaders();
+            updateToggleMarkersButtonUI();
         }
         
         function populateCoordSelect(select, types, selectedValue) {
@@ -663,6 +684,34 @@
                 }
             });
             if (bounds.length > 0) appState.map.fitBounds(bounds, { padding: [50, 50] });
+        }
+
+        function toggleInputMarkers() {
+            appState.showInputMarkers = !appState.showInputMarkers;
+            if (appState.showInputMarkers) {
+                appState.map.addLayer(appState.inputMarkers);
+            } else {
+                appState.map.removeLayer(appState.inputMarkers);
+            }
+            updateToggleMarkersButtonUI();
+        }
+
+        function updateToggleMarkersButtonUI() {
+            const btn = dom.toggleInputMarkersBtn;
+            const lang = appState.lang;
+
+            if (appState.showInputMarkers) {
+                btn.innerHTML = `
+                    <i data-lucide="eye-off" class="w-4 h-4 mr-1"></i>
+                    <span data-lang="hideInput">${uiStrings[lang].hideInput}</span>
+                `;
+            } else {
+                btn.innerHTML = `
+                    <i data-lucide="eye" class="w-4 h-4 mr-1"></i>
+                    <span data-lang="showInput">${uiStrings[lang].showInput}</span>
+                `;
+            }
+            lucide.createIcons();
         }
         
         function exportData(format) {
