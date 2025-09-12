@@ -69,22 +69,30 @@
                 
                 <!-- Seleção de Sistemas -->
                 <div class="space-y-3 mb-4">
-                    <div>
-                        <label for="input-system" class="block text-sm font-bold mb-1" data-lang="inputSystem">Referencial de Entrada</label>
-                        <select id="input-system" class="w-full p-2 border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500">
-                            <optgroup data-lang-opt="gradeTransform" label="Transformação por Grade">
-                                <option value="CA61">Córrego Alegre (1961)</option>
-                                <option value="CA7072">Córrego Alegre (1970+1972)</option>
-                                <option value="SAD69_CLASSIC">SAD69 (Rede Clássica)</option>
-                                <option value="SAD69_96_CLASSIC">SAD69/96 (Rede Clássica)</option>
-                            </optgroup>
-                            <optgroup data-lang-opt="paramTransform" label="Transformação por Parâmetros">
-                                <option value="SAD69_GPS">SAD69/96 (Técnica GPS/Doppler)</option>
-                            </optgroup>
-                            <optgroup data-lang-opt="coordConversion" label="Conversão de Coordenadas">
-                                <option value="SIRGAS2000" selected>SIRGAS2000</option>
-                            </optgroup>
-                        </select>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label for="input-system" class="block text-sm font-bold mb-1" data-lang="inputSystem">Referencial de Entrada</label>
+                            <select id="input-system" class="w-full p-2 border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                                <optgroup data-lang-opt="gradeTransform" label="Transformação por Grade">
+                                    <option value="CA61">Córrego Alegre (1961)</option>
+                                    <option value="CA7072">Córrego Alegre (1970+1972)</option>
+                                    <option value="SAD69_CLASSIC">SAD69 (Rede Clássica)</option>
+                                    <option value="SAD69_96_CLASSIC">SAD69/96 (Rede Clássica)</option>
+                                </optgroup>
+                                <optgroup data-lang-opt="paramTransform" label="Transformação por Parâmetros">
+                                    <option value="SAD69_GPS">SAD69/96 (Técnica GPS/Doppler)</option>
+                                </optgroup>
+                                <optgroup data-lang-opt="coordConversion" label="Conversão de Coordenadas">
+                                    <option value="SIRGAS2000" selected>SIRGAS2000</option>
+                                </optgroup>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="output-system" class="block text-sm font-bold mb-1" data-lang="outputSystem">Referencial de Saída</label>
+                            <select id="output-system" class="w-full p-2 border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500" disabled>
+                                 <option value="SIRGAS2000" selected>SIRGAS2000</option>
+                            </select>
+                        </div>
                     </div>
                     <div id="transformation-info" class="text-sm p-2 bg-emerald-50 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 rounded-md flex items-start space-x-2">
                         <i data-lucide="info" class="w-4 h-4 flex-shrink-0 mt-0.5"></i>
@@ -203,9 +211,6 @@
     </div>
 
     <script>
-    // NOTE: Funções matemáticas de Geodésia (UTM, Cartesianas) são complexas e foram simplificadas
-    // ou representadas por stubs para manter o código focado na estrutura da aplicação.
-    // Uma implementação de produção requer bibliotecas geodésicas robustas.
     document.addEventListener('DOMContentLoaded', () => {
     
         // --- ELEMENTOS DO DOM ---
@@ -214,6 +219,7 @@
             themeSwitcher: document.getElementById('theme-switcher'),
             languageSwitcher: document.getElementById('language-switcher'),
             inputSystem: document.getElementById('input-system'),
+            outputSystem: document.getElementById('output-system'),
             transformationInfo: document.getElementById('transformation-info'),
             transformationTypeText: document.getElementById('transformation-type-text'),
             inputCoordType: document.getElementById('input-coord-type'),
@@ -248,22 +254,27 @@
             map: null,
             inputMarkers: L.layerGroup(),
             outputMarkers: L.layerGroup(),
-            transformationType: 'Conversion', // 'Grade', 'Parameter', 'Conversion'
-            inputCoord: 'GEO_DEC', // GEO_DEC, UTM, CART
+            transformationType: 'Conversion',
+            inputCoord: 'GEO_DEC',
             outputCoord: 'UTM',
             showInputMarkers: true,
             selectedFile: null,
         };
 
-        // --- CONFIGURAÇÕES E DADOS ---
+        // --- CONFIGURAÇÕES E DADOS GEODÉSICOS ---
         const config = {
+            ellipsoids: {
+                'GRS80': { a: 6378137.0, f: 1 / 298.257222101 }, // SIRGAS2000
+                'SAD69': { a: 6378160.0, f: 1 / 298.25 },
+                'INTERNATIONAL_1924': { a: 6378388.0, f: 1 / 297.0 } // Córrego Alegre
+            },
             systems: {
-                'CA61': { type: 'Grade', coordTypes: ['GEO_DEC', 'UTM'], grid: 'CA61_003' },
-                'CA7072': { type: 'Grade', coordTypes: ['GEO_DEC', 'UTM'], grid: 'CA7072_003' },
-                'SAD69_CLASSIC': { type: 'Grade', coordTypes: ['GEO_DEC', 'UTM'], grid: 'SAD69_003' },
-                'SAD69_96_CLASSIC': { type: 'Grade', coordTypes: ['GEO_DEC', 'UTM'], grid: 'SAD96_003' },
-                'SAD69_GPS': { type: 'Parameter', coordTypes: ['GEO_DEC', 'UTM', 'CART'] },
-                'SIRGAS2000': { type: 'Conversion', coordTypes: ['GEO_DEC', 'UTM', 'CART'] }
+                'CA61': { type: 'Grade', coordTypes: ['GEO_DEC', 'UTM'], grid: 'CA61_003', ellipsoid: 'INTERNATIONAL_1924' },
+                'CA7072': { type: 'Grade', coordTypes: ['GEO_DEC', 'UTM'], grid: 'CA7072_003', ellipsoid: 'INTERNATIONAL_1924' },
+                'SAD69_CLASSIC': { type: 'Grade', coordTypes: ['GEO_DEC', 'UTM'], grid: 'SAD69_003', ellipsoid: 'SAD69' },
+                'SAD69_96_CLASSIC': { type: 'Grade', coordTypes: ['GEO_DEC', 'UTM'], grid: 'SAD96_003', ellipsoid: 'SAD69' },
+                'SAD69_GPS': { type: 'Parameter', coordTypes: ['GEO_DEC', 'UTM', 'CART'], ellipsoid: 'SAD69' },
+                'SIRGAS2000': { type: 'Conversion', coordTypes: ['GEO_DEC', 'UTM', 'CART'], ellipsoid: 'GRS80' }
             },
             coordTypes: {
                 'GEO_DEC': { label: 'Geodésica (Decimal)', headers: ['Lat', 'Lon', 'h (m)'], placeholders: ['-3.74', '-38.53', '0'] },
@@ -287,13 +298,11 @@
                 errorInvalidCoords: "Coordenadas inválidas. Verifique os valores.",
                 fileReadError: "Erro ao ler o arquivo.",
                 gridLoadError: "Falha ao carregar o arquivo da grade de transformação. Verifique o console.",
-                sameSystemError: "O tipo de entrada e saída não podem ser iguais.",
+                sameSystemError: "O referencial de entrada e saída não podem ser iguais para uma transformação.",
                 outOfBounds: "Fora dos limites da grade.",
-                gradeTransform: "Transformação por Grade", paramTransform: "Transformação por Parâmetros",
-                coordConversion: "Conversão de Coordenadas",
-                infoGrade: "Transformação 2D para SIRGAS2000 com modelo de distorções.",
-                infoParameter: "Transformação 3D para SIRGAS2000 usando parâmetros.",
-                infoConversion: "Conversão entre tipos de coordenadas em SIRGAS2000.",
+                gradeTransform: "Transformação 2D para SIRGAS2000 com modelo de distorções.",
+                paramTransform: "Transformação 3D para SIRGAS2000 usando parâmetros.",
+                coordConversion: "Conversão entre tipos de coordenadas em SIRGAS2000.",
                 sigmaLat: "σLat (m)", sigmaLon: "σLon (m)",
                 usingGrid: "Utilizando grade:",
                 importSettings: "Configurações de Importação", csvDelimiter: "Separador de Coluna", csvDecimal: "Separador Decimal",
@@ -316,13 +325,11 @@
                 errorInvalidCoords: "Invalid coordinates. Check values.",
                 fileReadError: "Error reading file.",
                 gridLoadError: "Failed to load the transformation grid file. Check console.",
-                sameSystemError: "Input and output types cannot be the same.",
+                sameSystemError: "Input and output datums cannot be the same for a transformation.",
                 outOfBounds: "Outside grid boundaries.",
-                gradeTransform: "Grid Transformation", paramTransform: "Parameter Transformation",
-                coordConversion: "Coordinate Conversion",
-                infoGrade: "2D transformation to SIRGAS2000 with distortion model.",
-                infoParameter: "3D transformation to SIRGAS2000 using parameters.",
-                infoConversion: "Conversion between coordinate types within SIRGAS2000.",
+                gradeTransform: "2D transformation to SIRGAS2000 with distortion model.",
+                paramTransform: "3D transformation to SIRGAS2000 using parameters.",
+                coordConversion: "Conversion between coordinate types within SIRGAS2000.",
                 sigmaLat: "σLat (m)", sigmaLon: "σLon (m)",
                 usingGrid: "Using grid:",
                 importSettings: "Import Settings", csvDelimiter: "Column Delimiter", csvDecimal: "Decimal Separator",
@@ -336,16 +343,11 @@
 
         // --- CACHE E CARREGAMENTO DE DADOS DAS GRADES ---
         const gridDataCache = {};
-
         async function getGridData(gridName) {
-            if (gridDataCache[gridName]) {
-                return gridDataCache[gridName];
-            }
+            if (gridDataCache[gridName]) return gridDataCache[gridName];
             try {
                 const response = await fetch(`./grades/${gridName}.json`);
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 const data = await response.json();
                 gridDataCache[gridName] = data;
                 return data;
@@ -355,77 +357,122 @@
                 return null;
             }
         }
+        
+        // --- FUNÇÕES GEODÉSICAS ---
+        function geodeticToCartesian(lat, lon, h, ellipsoid) {
+            const { a, f } = ellipsoid;
+            const e2 = 2 * f - f * f;
+            const N = a / Math.sqrt(1 - e2 * Math.sin(lat) ** 2);
+            const X = (N + h) * Math.cos(lat) * Math.cos(lon);
+            const Y = (N + h) * Math.cos(lat) * Math.sin(lon);
+            const Z = ((1 - e2) * N + h) * Math.sin(lat);
+            return { X, Y, Z };
+        }
 
+        function cartesianToGeodetic(X, Y, Z, ellipsoid) {
+            const { a, f } = ellipsoid;
+            const e2 = 2 * f - f * f;
+            const b = a * (1 - f);
+            const p = Math.sqrt(X ** 2 + Y ** 2);
+            const theta = Math.atan((Z * a) / (p * b));
+            const lon = Math.atan2(Y, X);
+            let lat = Math.atan((Z + e2 * b * Math.sin(theta) ** 3) / (p - e2 * a * Math.cos(theta) ** 3));
+            const N = a / Math.sqrt(1 - e2 * Math.sin(lat) ** 2);
+            const h = p / Math.cos(lat) - N;
+            return { lat, lon, h };
+        }
+        
+        // Placeholder for UTM conversion
+        function geodeticToUTM(lat, lon) { 
+            const zone = Math.floor((lon + 180) / 6) + 1;
+            // Simplified calculation for demonstration
+            const E = 500000 + (lon - (-183 + zone * 6)) * 111111 * Math.cos(lat * Math.PI / 180);
+            const N = (lat > 0 ? 0 : 10000000) + lat * 111111;
+            return { E, N, zone, hemisphere: lat >= 0 ? 'N' : 'S' };
+        }
+
+        function utmToGeodetic(E, N, zone, hemisphere) {
+            // Simplified calculation for demonstration
+            const lon0 = -183 + zone * 6;
+            const lat = (N - (hemisphere === 'N' ? 0 : 10000000)) / 111111;
+            const lon = ((E - 500000) / (111111 * Math.cos(lat * Math.PI / 180))) + lon0;
+            return { lat, lon };
+        }
+        
         // --- LÓGICA DE TRANSFORMAÇÃO ---
         
-        function transformWithGrid(point, grid) {
-            const sg = grid.sub_grids[0];
-            const lat = parseFloat(point.values[0]);
-            const lon = parseFloat(point.values[1]);
-
-            if(isNaN(lat) || isNaN(lon)) return { error: uiStrings[appState.lang].errorInvalidCoords };
-
-            const lonAbs = Math.abs(lon);
-            const south = sg.S_LAT, north = sg.N_LAT, west = Math.min(sg.W_LON, sg.E_LON), east = Math.max(sg.W_LON, sg.E_LON);
+        function getTransformationPipeline(point) {
+            const inputSys = dom.inputSystem.value;
+            const outputSys = dom.outputSystem.value;
+            const inputType = appState.inputCoord;
+            const outputType = appState.outputCoord;
             
-            if (lat < south || lat > north || lonAbs < west || lonAbs > east) {
-                return { error: uiStrings[appState.lang].outOfBounds };
+            if (inputSys === outputSys) {
+                // É apenas uma conversão de tipo de coordenada
+                return (p) => {
+                    const inputEllipsoid = config.ellipsoids[config.systems[inputSys].ellipsoid];
+                    let geo = p;
+                    if (inputType === 'UTM') geo = utmToGeodetic(p.values[0], p.values[1], parseInt(p.values[2]), p.values[2].slice(-1));
+                    if (inputType === 'CART') geo = cartesianToGeodetic(p.values[0], p.values[1], p.values[2], inputEllipsoid);
+
+                    if (outputType === 'GEO_DEC') return { output: [geo.lat, geo.lon, geo.h || p.values[2] || 0]};
+                    if (outputType === 'UTM') {
+                        const utm = geodeticToUTM(geo.lat, geo.lon);
+                        return { output: [utm.E, utm.N, `${utm.zone}${utm.hemisphere}`, geo.h || p.values[3] || 0] };
+                    }
+                    if (outputType === 'CART') {
+                         const cart = geodeticToCartesian(geo.lat, geo.lon, geo.h || 0, inputEllipsoid);
+                         return { output: [cart.X, cart.Y, cart.Z] };
+                    }
+                }
+            } else {
+                 // É uma transformação de datum
+                 return async (p) => {
+                    let geoIn = { lat: p.values[0], lon: p.values[1], h: p.values[2] || 0};
+                    let geoOut;
+                    let uncertainty = [0,0];
+
+                    const inputSystemConfig = config.systems[inputSys];
+                    const transformationType = inputSystemConfig.type;
+                    
+                    if (transformationType === 'Grade') {
+                        const grid = await getGridData(inputSystemConfig.grid);
+                        if (!grid) return { error: 'Grid load failed' };
+                        const result = transformWithGrid(p, grid);
+                        if(result.error) return result;
+                        geoOut = { lat: result.output[0], lon: result.output[1], h: geoIn.h };
+                        uncertainty = result.uncertainty;
+                    } else if (transformationType === 'Parameter') {
+                        const inEllipsoid = config.ellipsoids[inputSystemConfig.ellipsoid];
+                        const outEllipsoid = config.ellipsoids[config.systems[outputSys].ellipsoid];
+                        const params = config.params_SAD69_SIRGAS2000;
+                        
+                        const cartIn = geodeticToCartesian(geoIn.lat * Math.PI/180, geoIn.lon * Math.PI/180, geoIn.h, inEllipsoid);
+                        const cartOut = { X: cartIn.X + params.dX, Y: cartIn.Y + params.dY, Z: cartIn.Z + params.dZ };
+                        const geoOutRad = cartesianToGeodetic(cartOut.X, cartOut.Y, cartOut.Z, outEllipsoid);
+                        geoOut = { lat: geoOutRad.lat * 180/Math.PI, lon: geoOutRad.lon * 180/Math.PI, h: geoOutRad.h };
+                    }
+
+                    if (outputType === 'GEO_DEC') return { output: [geoOut.lat, geoOut.lon, geoOut.h], uncertainty };
+                    if (outputType === 'UTM') {
+                        const utm = geodeticToUTM(geoOut.lat, geoOut.lon);
+                        return { output: [utm.E, utm.N, `${utm.zone}${utm.hemisphere}`, geoOut.h], uncertainty };
+                    }
+                    if (outputType === 'CART') {
+                        const outEllipsoid = config.ellipsoids[config.systems[outputSys].ellipsoid];
+                        const cart = geodeticToCartesian(geoOut.lat * Math.PI/180, geoOut.lon * Math.PI/180, geoOut.h, outEllipsoid);
+                        return { output: [cart.X, cart.Y, cart.Z], uncertainty };
+                    }
+                 };
             }
-
-            const pointsPerRow = Math.round(Math.abs(east - west) / sg.LON_INC) + 1;
-            const rowIndex = Math.floor((lat - south) / sg.LAT_INC);
-            const colIndex = Math.floor((lonAbs - west) / sg.LON_INC);
-
-            const idx_a = rowIndex * pointsPerRow + colIndex;
-            if ((idx_a + pointsPerRow + 1) >= sg.shifts.length) {
-                 return { error: "Ponto na borda superior da grade, extrapolação não implementada." };
-            }
-
-            const shift_a = sg.shifts[idx_a], shift_b = sg.shifts[idx_a + 1], shift_c = sg.shifts[idx_a + pointsPerRow], shift_d = sg.shifts[idx_a + pointsPerRow + 1];
-
-            const lat_a = south + rowIndex * sg.LAT_INC;
-            const lon_a = west + colIndex * sg.LON_INC;
-            const x = (lat - lat_a) / sg.LAT_INC;
-            const y = (lonAbs - lon_a) / sg.LON_INC;
-            
-            const interpolatedShifts = [0, 0, 0, 0];
-            for (let i = 0; i < 4; i++) {
-                interpolatedShifts[i] = (shift_a[i] * (1 - x) * (1 - y)) + (shift_c[i] * x * (1 - y)) + (shift_b[i] * (1 - x) * y) + (shift_d[i] * x * y);
-            }
-            
-            const [dLat, dLon, accLat, accLon] = interpolatedShifts;
-            
-            return {
-                output: [lat + dLat, lon - dLon],
-                uncertainty: [accLat, accLon]
-            };
         }
 
-        function transformWithParameters(point) {
-            const lat = parseFloat(point.values[0]), lon = parseFloat(point.values[1]);
-            return { output: [lat - 0.0006, lon + 0.00003] };
-        }
-
-        function convertCoordinates(point) {
-            if(appState.inputCoord === 'GEO_DEC' && appState.outputCoord === 'UTM'){
-                 return { output: [551234.56, 9586543.21, "24S", point.values[2]] };
-            }
-            if(appState.inputCoord === 'UTM' && appState.outputCoord === 'GEO_DEC'){
-                 return { output: [-3.745, -38.535, point.values[3]] };
-            }
-            return { output: point.values }; 
-        }
-
-        // --- INICIALIZAÇÃO E LÓGICA DA UI ---
+        // --- INICIALIZAÇÃO E EVENT LISTENERS ---
         
         function init() {
             const applyTheme = (theme) => {
                 appState.theme = theme;
-                if (theme === 'dark') {
-                    dom.html.classList.add('dark');
-                } else {
-                    dom.html.classList.remove('dark');
-                }
+                dom.html.classList.toggle('dark', theme === 'dark');
                 lucide.createIcons();
             };
             
@@ -451,7 +498,6 @@
             setLanguage(lang);
         }
 
-
         function setupEventListeners() {
             dom.languageSwitcher.addEventListener('change', (e) => setLanguage(e.target.value));
             dom.inputSystem.addEventListener('change', updateUI);
@@ -473,23 +519,17 @@
             appState.points = [];
             appState.results = [];
             appState.selectedFile = null;
-
             dom.pointsTableBody.innerHTML = '';
             dom.resultsTableBody.innerHTML = '';
             dom.resultsTableBody.appendChild(dom.noResultsRow);
-
             appState.inputMarkers.clearLayers();
             appState.outputMarkers.clearLayers();
-
             dom.exportCsvBtn.disabled = true;
             dom.exportTxtBtn.disabled = true;
             dom.importFileBtn.disabled = true;
-
             dom.fileNameDisplay.textContent = uiStrings[appState.lang].supportedFormats;
             dom.resultsInfo.textContent = '';
-            
             dom.fileInput.value = '';
-
             addPointRow();
             appState.map.setView([-15.78, -47.92], 4);
         }
@@ -521,13 +561,23 @@
             const system = dom.inputSystem.value;
             const systemConfig = config.systems[system];
             appState.transformationType = systemConfig.type;
-            const infoKey = {'Grade': 'infoGrade', 'Parameter': 'infoParameter', 'Conversion': 'infoConversion'}[appState.transformationType];
-            dom.transformationTypeText.textContent = uiStrings[appState.lang][infoKey];
+            const infoKey = {'Grade': 'infoGrade', 'Parameter': 'infoParameter', 'Conversion': 'coordConversion'}[appState.transformationType];
+            
+            if (system === 'SIRGAS2000') {
+                dom.transformationTypeText.textContent = uiStrings[appState.lang].infoConversion;
+                dom.outputSystem.disabled = true;
+            } else {
+                dom.transformationTypeText.textContent = uiStrings[appState.lang][infoKey];
+                dom.outputSystem.disabled = true; // Mantém desabilitado por enquanto
+            }
+
             const currentInputType = dom.inputCoordType.value || systemConfig.coordTypes[0];
             populateCoordSelect(dom.inputCoordType, systemConfig.coordTypes, currentInputType);
-            const outputSystemConfig = config.systems['SIRGAS2000'];
+            
+            const outputSystemConfig = config.systems[dom.outputSystem.value];
             const currentOutputType = dom.outputCoordType.value || outputSystemConfig.coordTypes[0];
             populateCoordSelect(dom.outputCoordType, outputSystemConfig.coordTypes, currentOutputType);
+
             appState.inputCoord = dom.inputCoordType.value;
             appState.outputCoord = dom.outputCoordType.value;
             updateTableHeaders();
@@ -580,43 +630,26 @@
         function updatePointsFromTable() {
             appState.points = Array.from(dom.pointsTableBody.rows).map(row => {
                 const inputs = row.querySelectorAll('input');
-                return { name: inputs[0].value, values: Array.from(inputs).slice(1).map(inp => inp.value) };
+                const values = Array.from(inputs).slice(1).map(inp => parseFloat(inp.value.replace(',','.')));
+                return { name: inputs[0].value, values };
             });
         }
         
         async function handleTransform() {
             updatePointsFromTable();
             if (appState.points.length === 0) return alert(uiStrings[appState.lang].errorNoPoints);
-            if (appState.transformationType === 'Conversion' && appState.inputCoord === appState.outputCoord) return alert(uiStrings[appState.lang].sameSystemError);
+            if (dom.inputSystem.value === dom.outputSystem.value && appState.inputCoord === appState.outputCoord) {
+                return alert(uiStrings[appState.lang].sameSystemError);
+            }
 
             dom.transformBtn.disabled = true;
             dom.transformBtn.innerHTML = `<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> <span data-lang="processing">${uiStrings[appState.lang].processing}</span>`;
             
-            const system = dom.inputSystem.value;
-            const systemConfig = config.systems[system];
-            
-            let grid = null;
-            if (appState.transformationType === 'Grade') {
-                const gridName = systemConfig.grid;
-                grid = await getGridData(gridName);
-                if (!grid) {
-                    dom.transformBtn.disabled = false;
-                    dom.transformBtn.innerHTML = `<i data-lucide="rotate-cw" class="w-5 h-5"></i> <span data-lang="transform">${uiStrings[appState.lang].transform}</span>`;
-                    lucide.createIcons();
-                    return;
-                }
-                dom.resultsInfo.textContent = `${uiStrings[appState.lang].usingGrid} ${gridName}.json`;
-            } else {
-                 dom.resultsInfo.textContent = '';
-            }
-            
+            const pipeline = getTransformationPipeline();
             appState.results = [];
             for (const point of appState.points) {
-                let result;
-                if (appState.transformationType === 'Grade') result = transformWithGrid(point, grid);
-                else if (appState.transformationType === 'Parameter') result = transformWithParameters(point);
-                else result = convertCoordinates(point);
-                appState.results.push({ ...point, output: result.output || ['Error'], uncertainty: result.uncertainty, error: result.error });
+                const result = await pipeline(point);
+                appState.results.push({ ...point, ...result });
             }
             
             renderResults();
@@ -641,11 +674,12 @@
                 if (res.error) {
                     cells += `<td colspan="6" class="p-2 text-center text-red-500">${res.error}</td>`;
                 } else {
-                    cells += `<td class="p-2">${parseFloat(res.values[0]).toFixed(6)}</td>`;
-                    cells += `<td class="p-2">${parseFloat(res.values[1]).toFixed(6)}</td>`;
+                    cells += `<td class="p-2">${res.values[0].toFixed(6)}</td>`;
+                    cells += `<td class="p-2">${res.values[1].toFixed(6)}</td>`;
                     cells += `<td class="p-2 font-semibold text-emerald-600 dark:text-emerald-400">${typeof res.output[0] === 'number' ? res.output[0].toFixed(6) : res.output[0]}</td>`;
                     cells += `<td class="p-2 font-semibold text-emerald-600 dark:text-emerald-400">${typeof res.output[1] === 'number' ? res.output[1].toFixed(6) : res.output[1]}</td>`;
-                    if (appState.transformationType === 'Grade' && res.uncertainty) {
+                    
+                    if (config.systems[dom.inputSystem.value].type === 'Grade' && res.uncertainty) {
                         cells += `<td class="p-2 text-gray-500">${res.uncertainty[0].toFixed(3)}</td>`;
                         cells += `<td class="p-2 text-gray-500">${res.uncertainty[1].toFixed(3)}</td>`;
                     }
@@ -673,13 +707,13 @@
             if(validResults.length === 0) return;
             const bounds = [];
             validResults.forEach(res => {
-                const [inputLat, inputLon] = res.values.map(parseFloat);
+                const [inputLat, inputLon] = res.values;
                 if (!isNaN(inputLat) && !isNaN(inputLon)) {
                     const marker = L.marker([inputLat, inputLon]).bindPopup(`<b>${res.name} (Entrada)</b><br>Lat: ${inputLat.toFixed(6)}<br>Lon: ${inputLon.toFixed(6)}`);
                     appState.inputMarkers.addLayer(marker);
                     bounds.push([inputLat, inputLon]);
                 }
-                const [outputLat, outputLon] = res.output.map(parseFloat);
+                const [outputLat, outputLon] = res.output;
                 if (!isNaN(outputLat) && !isNaN(outputLon)) {
                     const marker = L.marker([outputLat, outputLon], { icon: L.icon({ iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png', shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41] }) })
                         .bindPopup(`<b>${res.name} (Saída)</b><br>Lat: ${outputLat.toFixed(6)}<br>Lon: ${outputLon.toFixed(6)}`);
@@ -717,10 +751,10 @@
                 if (res.error) {
                     rowData.push('ERRO', res.error);
                 } else {
-                    rowData.push(parseFloat(res.values[0]).toFixed(6), parseFloat(res.values[1]).toFixed(6));
+                    rowData.push(res.values[0].toFixed(6), res.values[1].toFixed(6));
                     rowData.push(typeof res.output[0] === 'number' ? res.output[0].toFixed(6) : res.output[0]);
                     rowData.push(typeof res.output[1] === 'number' ? res.output[1].toFixed(6) : res.output[1]);
-                    if (appState.transformationType === 'Grade' && res.uncertainty) {
+                    if (config.systems[dom.inputSystem.value].type === 'Grade' && res.uncertainty) {
                         rowData.push(res.uncertainty[0].toFixed(3), res.uncertainty[1].toFixed(3));
                     }
                 }
@@ -775,9 +809,7 @@
                         addPointRow(name, values);
                     });
                     
-                    // Mudar para a aba manual para mostrar os pontos importados
                     switchTab({ currentTarget: document.querySelector('.tab-btn[data-tab="manual"]') });
-
                 } catch (error) {
                     alert(uiStrings[appState.lang].fileReadError);
                     console.error("File read error:", error);
