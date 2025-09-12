@@ -7,7 +7,7 @@
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-      // Adiciona a configuração para o Tailwind usar a classe 'dark' para o tema escuro
+      // Garante que o TailwindCSS use a classe 'dark' para o modo escuro.
       tailwind.config = {
         darkMode: 'class',
       }
@@ -429,21 +429,25 @@
         // --- INICIALIZAÇÃO E LÓGICA DA UI ---
         
         function init() {
-            const lang = localStorage.getItem('language') || 'pt';
-            dom.languageSwitcher.value = lang;
-
-            initMap();
-            setupEventListeners();
-            
-            // Lógica de Tema refatorada e simplificada
+            // Lógica de Tema refatorada para ser mais direta
             const applyTheme = (theme) => {
                 appState.theme = theme;
-                dom.html.classList.toggle('dark', theme === 'dark');
+                if (theme === 'dark') {
+                    dom.html.classList.add('dark');
+                } else {
+                    dom.html.classList.remove('dark');
+                }
                 lucide.createIcons();
             };
             
-            const savedTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-            applyTheme(savedTheme);
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme) {
+                applyTheme(savedTheme);
+            } else {
+                // Se não houver tema salvo, usa a preferência do sistema
+                const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                applyTheme(systemPrefersDark ? 'dark' : 'light');
+            }
 
             dom.themeSwitcher.addEventListener('click', () => {
                 const newTheme = appState.theme === 'light' ? 'dark' : 'light';
@@ -451,8 +455,14 @@
                 applyTheme(newTheme);
             });
 
+            const lang = localStorage.getItem('language') || 'pt';
+            dom.languageSwitcher.value = lang;
+
+            initMap();
+            setupEventListeners();
             setLanguage(lang); // Aplica o idioma e atualiza a UI
         }
+
 
         function setupEventListeners() {
             dom.languageSwitcher.addEventListener('change', (e) => setLanguage(e.target.value));
