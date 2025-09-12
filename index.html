@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="pt-br" class="">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coord-X TRAMA | Transformador de Coordenadas Geodésicas</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        :root {
+            --color-primary: #10b981;
+            --color-primary-dark: #047857;
+            --color-bg-light: #f9fafb;
+            --color-surface-dark: #374151;
+        }
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--color-bg-light); }
+        .dark ::-webkit-scrollbar-track { background: var(--color-surface-dark); }
+        ::-webkit-scrollbar-thumb { background: var(--color-primary); border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: var(--color-primary-dark); }
+
+        .leaflet-popup-content-wrapper { background: #ffffff; color: #333; border-radius: 8px; }
+        .dark .leaflet-popup-content-wrapper, .dark .leaflet-popup-tip { background: var(--color-surface-dark); color: #f0fdf4; }
+        .dark .leaflet-tile-pane { filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7); }
+        .tab-btn.active { border-bottom: 2px solid var(--color-primary); color: var(--color-primary); font-weight: 600; }
+    </style>
+</head>
+<body class="bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-200 font-sans antialiased transition-colors duration-300">
+
+    <div id="app" class="flex flex-col h-screen">
+        <!-- Cabeçalho -->
+        <header class="bg-white dark:bg-gray-900 shadow-md p-4 flex justify-between items-center z-10 flex-shrink-0">
+            <div class="flex items-center space-x-3">
+                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-emerald-500"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10"/><path d="m9.09 9.91 5.83 5.83"/><path d="m14.91 9.91-5.83 5.83"/></svg>
+                <div>
+                    <h1 class="text-xl font-bold text-emerald-500">Coord-X TRAMA</h1>
+                    <p class="text-xs text-gray-500 dark:text-gray-400" data-lang="subtitle">por Jairo Ivo C. Brito | Lab. TRAMA - UFC</p>
+                </div>
+            </div>
+            <div class="flex items-center space-x-4">
+                <div class="flex items-center">
+                    <i data-lucide="globe" class="w-4 h-4 mr-2"></i>
+                    <select id="language-switcher" class="bg-transparent text-sm font-medium rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                        <option value="pt">Português (BR)</option>
+                        <option value="en">English (US)</option>
+                    </select>
+                </div>
+                <button id="theme-switcher" class="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                    <i data-lucide="sun" class="w-5 h-5 hidden dark:block"></i>
+                    <i data-lucide="moon" class="w-5 h-5 block dark:hidden"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- Conteúdo Principal -->
+        <main class="flex-grow flex flex-col md:flex-row overflow-hidden">
+            <!-- Painel de Controle (Esquerda) -->
+            <div class="w-full md:w-2/5 lg:w-1/3 flex flex-col p-4 bg-white dark:bg-gray-900 overflow-y-auto">
+                
+                <!-- Seleção de Sistemas -->
+                <div class="space-y-3 mb-4">
+                    <div>
+                        <label for="input-system" class="block text-sm font-bold mb-1" data-lang="inputSystem">Referencial de Entrada</label>
+                        <select id="input-system" class="w-full p-2 border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                            <optgroup data-lang-opt="gradeTransform" label="Transformação por Grade">
+                                <option value="CA61">Córrego Alegre (1961)</option>
+                                <option value="CA7072">Córrego Alegre (1970+1972)</option>
+                                <option value="SAD69_CLASSIC">SAD69 (Rede Clássica)</option>
+                                <option value="SAD69_96_CLASSIC">SAD69/96 (Rede Clássica)</option>
+                            </optgroup>
+                            <optgroup data-lang-opt="paramTransform" label="Transformação por Parâmetros">
+                                <option value="SAD69_GPS">SAD69/96 (Técnica GPS/Doppler)</option>
+                            </optgroup>
+                            <optgroup data-lang-opt="coordConversion" label="Conversão de Coordenadas">
+                                <option value="SIRGAS2000" selected>SIRGAS2000</option>
+                            </optgroup>
+                        </select>
+                    </div>
+                    <div id="transformation-info" class="text-sm p-2 bg-emerald-50 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 rounded-md flex items-start space-x-2">
+                        <i data-lucide="info" class="w-4 h-4 flex-shrink-0 mt-0.5"></i>
+                        <span id="transformation-type-text"></span>
+                    </div>
+                     <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label for="input-coord-type" class="block text-sm font-bold mb-1" data-lang="inputCoordType">Tipo de Entrada</label>
+                            <select id="input-coord-type" class="w-full p-2 border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"></select>
+                        </div>
+                        <div>
+                            <label for="output-coord-type" class="block text-sm font-bold mb-1" data-lang="outputCoordType">Tipo de Saída</label>
+                            <select id="output-coord-type" class="w-full p-2 border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"></select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Input de Coordenadas -->
+                <div class="flex-grow flex flex-col min-h-0">
+                    <h3 class="font-bold mb-2 border-b border-gray-300 dark:border-gray-600 pb-1" data-lang="coordsInput">Entrada de Coordenadas</h3>
+                    <div class="flex border-b border-gray-300 dark:border-gray-600 mb-2">
+                        <button class="tab-btn active px-4 py-2 text-sm" data-tab="manual" data-lang="manual">Manual</button>
+                        <button class="tab-btn px-4 py-2 text-sm" data-tab="import" data-lang="import">Importar Arquivo</button>
+                    </div>
+
+                    <div id="manual-tab" class="tab-content flex-grow flex flex-col min-h-0">
+                         <div class="flex-grow overflow-y-auto pr-2">
+                            <table class="w-full text-sm">
+                                <thead id="points-table-head"></thead>
+                                <tbody id="points-table-body"></tbody>
+                            </table>
+                        </div>
+                        <button id="add-point-btn" class="mt-2 w-full flex items-center justify-center p-2 bg-emerald-500 text-white rounded-md hover:bg-emerald-600 transition-colors">
+                            <i data-lucide="plus" class="w-4 h-4 mr-2"></i>
+                            <span data-lang="addPoint">Adicionar Ponto</span>
+                        </button>
+                    </div>
+                    
+                    <div id="import-tab" class="tab-content hidden flex flex-col">
+                        <div class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center">
+                            <i data-lucide="upload-cloud" class="w-12 h-12 mx-auto text-gray-400"></i>
+                            <label for="file-input" class="cursor-pointer mt-2 text-emerald-500 hover:text-emerald-600 font-semibold" data-lang="selectFile">Selecione um arquivo</label>
+                            <input type="file" id="file-input" class="hidden" accept=".csv,.txt">
+                            <p id="file-name" class="text-xs text-gray-500 mt-1" data-lang="supportedFormats">Suporta CSV, TXT</p>
+                        </div>
+                        <div class="mt-4 space-y-2 text-sm">
+                            <h4 class="font-semibold text-gray-700 dark:text-gray-300" data-lang="importSettings">Configurações de Importação</h4>
+                            <div class="grid grid-cols-2 gap-2 p-2 bg-gray-100 dark:bg-gray-800 rounded-md">
+                                <div>
+                                    <label for="csv-delimiter" class="block text-xs font-medium text-gray-500 dark:text-gray-400" data-lang="csvDelimiter">Separador de Coluna</label>
+                                    <select id="csv-delimiter" class="w-full p-1 text-xs border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded-md focus:outline-none focus:ring-1 focus:ring-emerald-500">
+                                        <option value="," data-lang="comma">Vírgula (,)</option>
+                                        <option value=";" data-lang="semicolon">Ponto e Vírgula (;)</option>
+                                        <option value="\t" data-lang="tab">Tabulação (Tab)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="csv-decimal" class="block text-xs font-medium text-gray-500 dark:text-gray-400" data-lang="csvDecimal">Separador Decimal</label>
+                                    <select id="csv-decimal" class="w-full p-1 text-xs border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded-md focus:outline-none focus:ring-1 focus:ring-emerald-500">
+                                        <option value="." data-lang="dot">Ponto (.)</option>
+                                        <option value="," data-lang="commaDecimal">Vírgula (,)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-auto pt-4">
+                    <button id="transform-btn" class="w-full p-3 bg-emerald-600 text-white font-bold rounded-lg hover:bg-emerald-700 transition-all duration-300 shadow-lg hover:shadow-xl transform hover:-translate-y-0.5 flex items-center justify-center space-x-2">
+                        <i data-lucide="rotate-cw" class="w-5 h-5"></i>
+                        <span data-lang="transform">Transformar</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Painel de Resultados (Direita) -->
+            <div class="w-full md:w-3/5 lg:w-2/3 flex flex-col">
+                <div id="map" class="h-1/2 md:h-2/3 w-full bg-gray-200 dark:bg-gray-700"></div>
+                <div class="flex-grow p-4 flex flex-col min-h-0 bg-gray-100 dark:bg-gray-800">
+                    <div class="flex justify-between items-center mb-2">
+                        <h3 class="font-bold" data-lang="results">Resultados</h3>
+                        <div class="space-x-2">
+                            <button id="export-csv-btn" class="p-2 text-xs bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 flex items-center" disabled>
+                                <i data-lucide="file-down" class="w-4 h-4 mr-1"></i> CSV
+                            </button>
+                            <button id="export-txt-btn" class="p-2 text-xs bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 flex items-center" disabled>
+                                <i data-lucide="file-down" class="w-4 h-4 mr-1"></i> TXT
+                            </button>
+                        </div>
+                    </div>
+                     <div id="results-info" class="text-xs text-center p-1 mb-2 text-gray-500 dark:text-gray-400"></div>
+                    <div class="flex-grow overflow-y-auto bg-white dark:bg-gray-900 rounded-lg shadow-inner">
+                        <table class="w-full text-sm text-left">
+                            <thead id="results-table-head" class="sticky top-0 bg-gray-100 dark:bg-gray-800 z-10"></thead>
+                            <tbody id="results-table-body">
+                                <tr id="no-results-row">
+                                    <td colspan="7" class="text-center p-8 text-gray-500" data-lang="noResults">Nenhum resultado para exibir.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+    // NOTE: Funções matemáticas de Geodésia (UTM, Cartesianas) são complexas e foram simplificadas
+    // ou representadas por stubs para manter o código focado na estrutura da aplicação.
+    // Uma implementação de produção requer bibliotecas geodésicas robustas.
+    document.addEventListener('DOMContentLoaded', () => {
+    
+        // --- ELEMENTOS DO DOM ---
+        const dom = {
+            html: document.documentElement,
+            themeSwitcher: document.getElementById('theme-switcher'),
+            languageSwitcher: document.getElementById('language-switcher'),
+            inputSystem: document.getElementById('input-system'),
+            transformationInfo: document.getElementById('transformation-info'),
+            transformationTypeText: document.getElementById('transformation-type-text'),
+            inputCoordType: document.getElementById('input-coord-type'),
+            outputCoordType: document.getElementById('output-coord-type'),
+            pointsTableHead: document.getElementById('points-table-head'),
+            pointsTableBody: document.getElementById('points-table-body'),
+            resultsTableHead: document.getElementById('results-table-head'),
+            resultsTableBody: document.getElementById('results-table-body'),
+            resultsInfo: document.getElementById('results-info'),
+            addPointBtn: document.getElementById('add-point-btn'),
+            transformBtn: document.getElementById('transform-btn'),
+            noResultsRow: document.getElementById('no-results-row'),
+            fileInput: document.getElementById('file-input'),
+            fileNameDisplay: document.getElementById('file-name'),
+            exportCsvBtn: document.getElementById('export-csv-btn'),
+            exportTxtBtn: document.getElementById('export-txt-btn'),
+            tabBtns: document.querySelectorAll('.tab-btn'),
+            tabContents: document.querySelectorAll('.tab-content'),
+            csvDelimiter: document.getElementById('csv-delimiter'),
+            csvDecimal: document.getElementById('csv-decimal'),
+        };
+
+        // --- ESTADO DA APLICAÇÃO ---
+        let appState = {
+            points: [],
+            results: [],
+            lang: 'pt',
+            theme: 'light',
+            map: null,
+            inputMarkers: L.layerGroup(),
+            outputMarkers: L.layerGroup(),
+            transformationType: 'Conversion', // 'Grade', 'Parameter', 'Conversion'
+            inputCoord: 'GEO_DEC', // GEO_DEC, UTM, CART
+            outputCoord: 'UTM'
+        };
+
+        // --- CONFIGURAÇÕES E DADOS ---
+        const config = {
+            systems: {
+                'CA61': { type: 'Grade', coordTypes: ['GEO_DEC', 'UTM'], grid: 'CA61_003' },
+                'CA7072': { type: 'Grade', coordTypes: ['GEO_DEC', 'UTM'], grid: 'CA7072_003' },
+                'SAD69_CLASSIC': { type: 'Grade', coordTypes: ['GEO_DEC', 'UTM'], grid: 'SAD69_003' },
+                'SAD69_96_CLASSIC': { type: 'Grade', coordTypes: ['GEO_DEC', 'UTM'], grid: 'SAD96_003' },
+                'SAD69_GPS': { type: 'Parameter', coordTypes: ['GEO_DEC', 'UTM', 'CART'] },
+                'SIRGAS2000': { type: 'Conversion', coordTypes: ['GEO_DEC', 'UTM', 'CART'] }
+            },
+            coordTypes: {
+                'GEO_DEC': { label: 'Geodésica (Decimal)', headers: ['Lat', 'Lon', 'h (m)'], placeholders: ['-3.74', '-38.53', '0'] },
+                'UTM': { label: 'UTM (m)', headers: ['E', 'N', 'Fuso', 'h (m)'], placeholders: ['551000', '9586000', '24S', '0'] },
+                'CART': { label: 'Cartesiana (m)', headers: ['X', 'Y', 'Z'], placeholders: ['2755000', '-4815000', '-414000'] }
+            },
+            params_SAD69_SIRGAS2000: { dX: -67.35, dY: 3.88, dZ: -38.22 },
+        };
+        
+        const uiStrings = {
+            pt: {
+                subtitle: "por Jairo Ivo C. Brito | Lab. TRAMA - UFC",
+                inputSystem: "Referencial de Entrada", outputSystem: "Referencial de Saída",
+                inputCoordType: "Tipo de Entrada", outputCoordType: "Tipo de Saída",
+                coordsInput: "Entrada de Coordenadas", manual: "Manual", import: "Importar Arquivo",
+                point: "Ponto", addPoint: "Adicionar Ponto", selectFile: "Selecione um arquivo",
+                supportedFormats: "Suporta CSV, TXT",
+                transform: "Transformar", results: "Resultados",
+                noResults: "Nenhum resultado para exibir.", processing: "Processando...",
+                errorNoPoints: "Adicione ao menos um ponto.",
+                errorInvalidCoords: "Coordenadas inválidas. Verifique os valores.",
+                fileReadError: "Erro ao ler o arquivo.",
+                gridLoadError: "Falha ao carregar o arquivo da grade de transformação. Verifique o console.",
+                sameSystemError: "O tipo de entrada e saída não podem ser iguais.",
+                outOfBounds: "Fora dos limites da grade.",
+                gradeTransform: "Transformação por Grade", paramTransform: "Transformação por Parâmetros",
+                coordConversion: "Conversão de Coordenadas",
+                infoGrade: "Transformação 2D para SIRGAS2000 com modelo de distorções.",
+                infoParameter: "Transformação 3D para SIRGAS2000 usando parâmetros.",
+                infoConversion: "Conversão entre tipos de coordenadas em SIRGAS2000.",
+                sigmaLat: "σLat (m)", sigmaLon: "σLon (m)",
+                usingGrid: "Utilizando grade:",
+                importSettings: "Configurações de Importação", csvDelimiter: "Separador de Coluna", csvDecimal: "Separador Decimal",
+                comma: "Vírgula (,)", semicolon: "Ponto e Vírgula (;)", tab: "Tabulação (Tab)",
+                dot: "Ponto (.)", commaDecimal: "Vírgula (,)",
+            },
+            en: {
+                subtitle: "by Jairo Ivo C. Brito | TRAMA Lab - UFC",
+                inputSystem: "Input System", outputSystem: "Output System",
+                inputCoordType: "Input Type", outputCoordType: "Output Type",
+                coordsInput: "Coordinate Input", manual: "Manual", import: "Import File",
+                point: "Point", addPoint: "Add Point", selectFile: "Select a file",
+                supportedFormats: "Supports CSV, TXT",
+                transform: "Transform", results: "Results",
+                noResults: "No results to display.", processing: "Processing...",
+                errorNoPoints: "Add at least one point.",
+                errorInvalidCoords: "Invalid coordinates. Check values.",
+                fileReadError: "Error reading file.",
+                gridLoadError: "Failed to load the transformation grid file. Check console.",
+                sameSystemError: "Input and output types cannot be the same.",
+                outOfBounds: "Outside grid boundaries.",
+                gradeTransform: "Grid Transformation", paramTransform: "Parameter Transformation",
+                coordConversion: "Coordinate Conversion",
+                infoGrade: "2D transformation to SIRGAS2000 with distortion model.",
+                infoParameter: "3D transformation to SIRGAS2000 using parameters.",
+                infoConversion: "Conversion between coordinate types within SIRGAS2000.",
+                sigmaLat: "σLat (m)", sigmaLon: "σLon (m)",
+                usingGrid: "Using grid:",
+                importSettings: "Import Settings", csvDelimiter: "Column Delimiter", csvDecimal: "Decimal Separator",
+                comma: "Comma (,)", semicolon: "Semicolon (;)", tab: "Tab",
+                dot: "Dot (.)", commaDecimal: "Comma (,)",
+            }
+        };
+
+        // --- CACHE E CARREGAMENTO DE DADOS DAS GRADES ---
+        const gridDataCache = {};
+
+        async function getGridData(gridName) {
+            if (gridDataCache[gridName]) {
+                return gridDataCache[gridName];
+            }
+            try {
+                // ASSUME que os arquivos .json estão numa pasta "grades"
+                const response = await fetch(`./grades/${gridName}.json`);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                gridDataCache[gridName] = data;
+                return data;
+            } catch (error) {
+                console.error(`Erro ao carregar o arquivo da grade ${gridName}.json:`, error);
+                alert(uiStrings[appState.lang].gridLoadError);
+                return null;
+            }
+        }
+
+        // --- LÓGICA DE TRANSFORMAÇÃO ---
+        
+        function transformWithGrid(point, grid) {
+            const sg = grid.sub_grids[0]; // Assumindo uma única sub-grade por arquivo
+            const lat = parseFloat(point.values[0]);
+            const lon = parseFloat(point.values[1]);
+
+            if(isNaN(lat) || isNaN(lon)) return { error: uiStrings[appState.lang].errorInvalidCoords };
+
+            // Longitudes no Brasil são negativas, mas as grades usam valores positivos a Oeste.
+            const lonAbs = Math.abs(lon);
+
+            // Verificação de limites
+            const south = sg.S_LAT;
+            const north = sg.N_LAT;
+            const west = Math.min(sg.W_LON, sg.E_LON);
+            const east = Math.max(sg.W_LON, sg.E_LON);
+            
+            if (lat < south || lat > north || lonAbs < west || lonAbs > east) {
+                return { error: uiStrings[appState.lang].outOfBounds };
+            }
+
+            // Cálculo dos índices da célula da grade (conforme documentação)
+            const pointsPerRow = Math.round(Math.abs(east - west) / sg.LON_INC) + 1;
+            
+            const rowIndex = Math.floor((lat - south) / sg.LAT_INC);
+            const colIndex = Math.floor((lonAbs - west) / sg.LON_INC);
+
+            // Índices dos 4 cantos da célula
+            const idx_a = rowIndex * pointsPerRow + colIndex;
+            const idx_b = idx_a + 1;
+            const idx_c = idx_a + pointsPerRow;
+            const idx_d = idx_c + 1;
+
+            if (idx_d >= sg.shifts.length) {
+                 return { error: "Ponto na borda superior da grade, extrapolação não implementada." };
+            }
+
+            const shift_a = sg.shifts[idx_a] || [0,0,0,0];
+            const shift_b = sg.shifts[idx_b] || [0,0,0,0];
+            const shift_c = sg.shifts[idx_c] || [0,0,0,0];
+            const shift_d = sg.shifts[idx_d] || [0,0,0,0];
+
+            // Fatores de interpolação (x, y normalizados de 0 a 1)
+            const lat_a = south + rowIndex * sg.LAT_INC;
+            const lon_a = west + colIndex * sg.LON_INC;
+
+            const x = (lat - lat_a) / sg.LAT_INC;
+            const y = (lonAbs - lon_a) / sg.LON_INC;
+            
+            // Interpolação bilinear para cada valor (dLat, dLon, accLat, accLon)
+            const interpolatedShifts = [0, 0, 0, 0];
+            for (let i = 0; i < 4; i++) {
+                const val_a = shift_a[i], val_b = shift_b[i], val_c = shift_c[i], val_d = shift_d[i];
+                interpolatedShifts[i] = (val_a * (1 - x) * (1 - y)) + (val_c * x * (1 - y)) + (val_b * (1 - x) * y) + (val_d * x * y);
+            }
+            
+            const [dLat, dLon, accLat, accLon] = interpolatedShifts;
+            
+            return {
+                output: [lat + dLat, lon - dLon], // Subtrai dLon pois a grade indica deslocamento para Oeste.
+                uncertainty: [accLat, accLon]
+            };
+        }
+
+        function transformWithParameters(point) {
+            const lat = parseFloat(point.values[0]);
+            const lon = parseFloat(point.values[1]);
+            const dLat = -0.0006; 
+            const dLon = 0.00003; 
+            return { output: [lat + dLat, lon + dLon] };
+        }
+
+        function convertCoordinates(point) {
+            if(appState.inputCoord === 'GEO_DEC' && appState.outputCoord === 'UTM'){
+                 return { output: [551234.56, 9586543.21, "24S", point.values[2]] };
+            }
+            if(appState.inputCoord === 'UTM' && appState.outputCoord === 'GEO_DEC'){
+                 return { output: [-3.745, -38.535, point.values[3]] };
+            }
+            return { output: point.values }; 
+        }
+
+        // --- INICIALIZAÇÃO E LÓGICA DA UI ---
+        
+        function init() {
+            const theme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+            appState.theme = theme;
+            dom.html.classList.toggle('dark', theme === 'dark');
+            
+            const lang = localStorage.getItem('language') || 'pt';
+            appState.lang = lang;
+            dom.languageSwitcher.value = lang;
+
+            lucide.createIcons();
+            initMap();
+            
+            dom.themeSwitcher.addEventListener('click', toggleTheme);
+            dom.languageSwitcher.addEventListener('change', (e) => setLanguage(e.target.value));
+            dom.inputSystem.addEventListener('change', updateUI);
+            dom.inputCoordType.addEventListener('change', updateUI);
+            dom.outputCoordType.addEventListener('change', updateUI);
+            dom.addPointBtn.addEventListener('click', () => addPointRow());
+            dom.pointsTableBody.addEventListener('click', handleTableClick);
+            dom.transformBtn.addEventListener('click', handleTransform);
+            dom.fileInput.addEventListener('change', handleFileSelect);
+            dom.exportCsvBtn.addEventListener('click', () => exportData('csv'));
+            dom.exportTxtBtn.addEventListener('click', () => exportData('txt'));
+            dom.tabBtns.forEach(btn => btn.addEventListener('click', switchTab));
+
+            updateUI();
+        }
+
+        function applyLanguageStrings(lang) {
+            const strings = uiStrings[lang];
+            document.querySelectorAll('[data-lang]').forEach(el => {
+                const key = el.dataset.lang;
+                if (strings[key]) {
+                    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
+                        el.placeholder = strings[key];
+                    } else {
+                        el.textContent = strings[key];
+                    }
+                }
+            });
+            document.querySelectorAll('[data-lang-opt]').forEach(el => {
+                const key = el.dataset.langOpt;
+                if(strings[key]) el.label = strings[key];
+            });
+        }
+
+        function setLanguage(lang) {
+            appState.lang = lang;
+            localStorage.setItem('language', lang);
+            document.documentElement.lang = lang.split('-')[0];
+            applyLanguageStrings(lang);
+            updateUI();
+        }
+
+        function toggleTheme() {
+            appState.theme = appState.theme === 'light' ? 'dark' : 'light';
+            dom.html.classList.toggle('dark');
+            localStorage.setItem('theme', appState.theme);
+            lucide.createIcons();
+        }
+        
+        function updateUI() {
+            const system = dom.inputSystem.value;
+            const systemConfig = config.systems[system];
+            appState.transformationType = systemConfig.type;
+            const infoKey = {'Grade': 'infoGrade', 'Parameter': 'infoParameter', 'Conversion': 'infoConversion'}[appState.transformationType];
+            dom.transformationTypeText.textContent = uiStrings[appState.lang][infoKey];
+            const currentInputType = dom.inputCoordType.value || systemConfig.coordTypes[0];
+            populateCoordSelect(dom.inputCoordType, systemConfig.coordTypes, currentInputType);
+            const outputSystemConfig = config.systems['SIRGAS2000'];
+            const currentOutputType = dom.outputCoordType.value || outputSystemConfig.coordTypes[0];
+            populateCoordSelect(dom.outputCoordType, outputSystemConfig.coordTypes, currentOutputType);
+            appState.inputCoord = dom.inputCoordType.value;
+            appState.outputCoord = dom.outputCoordType.value;
+            updateTableHeaders();
+        }
+        
+        function populateCoordSelect(select, types, selectedValue) {
+            select.innerHTML = '';
+            types.forEach(typeKey => {
+                const option = document.createElement('option');
+                option.value = typeKey;
+                option.textContent = config.coordTypes[typeKey].label;
+                select.appendChild(option);
+            });
+            select.value = types.includes(selectedValue) ? selectedValue : (types.length > 0 ? types[0] : '');
+        }
+        
+        function updateTableHeaders() {
+            const inputType = appState.inputCoord;
+            const outputType = appState.outputCoord;
+            const inputTypeConfig = config.coordTypes[inputType];
+            const outputTypeConfig = config.coordTypes[outputType];
+            if (!inputTypeConfig || !outputTypeConfig) return;
+            let inputHeaders = `<tr><th class="p-2 w-1/4" data-lang="point">${uiStrings[appState.lang].point}</th>`;
+            inputTypeConfig.headers.forEach(h => inputHeaders += `<th class="p-2">${h}</th>`);
+            inputHeaders += `<th class="p-2 w-10"></th></tr>`;
+            dom.pointsTableHead.innerHTML = inputHeaders;
+            const inputs = dom.pointsTableBody.querySelectorAll('input[data-col]');
+            inputs.forEach(input => {
+                const col = parseInt(input.dataset.col, 10);
+                if (inputTypeConfig.placeholders[col]) input.placeholder = inputTypeConfig.placeholders[col];
+            });
+            let resultsHeaders = `<tr><th class="p-2" data-lang="point">${uiStrings[appState.lang].point}</th>`;
+            resultsHeaders += `<th class="p-2">${inputTypeConfig.headers[0]} (In)</th>`;
+            resultsHeaders += `<th class="p-2">${inputTypeConfig.headers[1]} (In)</th>`;
+            resultsHeaders += `<th class="p-2">${outputTypeConfig.headers[0]} (Out)</th>`;
+            resultsHeaders += `<th class="p-2">${outputTypeConfig.headers[1]} (Out)</th>`;
+            if (appState.transformationType === 'Grade') {
+                resultsHeaders += `<th class="p-2" data-lang="sigmaLat">${uiStrings[appState.lang].sigmaLat}</th>`;
+                resultsHeaders += `<th class="p-2" data-lang="sigmaLon">${uiStrings[appState.lang].sigmaLon}</th>`;
+            }
+            resultsHeaders += `</tr>`;
+            dom.resultsTableHead.innerHTML = resultsHeaders;
+        }
+
+        function addPointRow(name = '', values = []) {
+            const rowCount = dom.pointsTableBody.rows.length;
+            const row = dom.pointsTableBody.insertRow();
+            const inputType = appState.inputCoord;
+            const typeConfig = config.coordTypes[inputType];
+            let cellHtml = `<td class="p-1"><input type="text" value="${name || `${uiStrings[appState.lang].point} ${rowCount + 1}`}" class="w-full p-2 bg-transparent rounded-md focus:outline-none focus:bg-gray-100 dark:focus:bg-gray-700"></td>`;
+            for (let i = 0; i < typeConfig.headers.length; i++) {
+                cellHtml += `<td class="p-1"><input type="text" data-col="${i}" placeholder="${typeConfig.placeholders[i]}" value="${values[i] || ''}" class="w-full p-2 bg-transparent rounded-md focus:outline-none focus:bg-gray-100 dark:focus:bg-gray-700"></td>`;
+            }
+            cellHtml += `<td class="p-1 text-center"><button class="remove-point-btn p-1 text-gray-400 hover:text-red-500 rounded-full"><i data-lucide="x-circle" class="w-4 h-4"></i></button></td>`;
+            row.innerHTML = cellHtml;
+            lucide.createIcons();
+        }
+        
+        function updatePointsFromTable() {
+            appState.points = [];
+            const rows = dom.pointsTableBody.rows;
+            for (let row of rows) {
+                const inputs = row.querySelectorAll('input');
+                const name = inputs[0].value;
+                const values = Array.from(inputs).slice(1).map(inp => inp.value);
+                appState.points.push({ name, values });
+            }
+        }
+        
+        async function handleTransform() {
+            updatePointsFromTable();
+            if (appState.points.length === 0) return alert(uiStrings[appState.lang].errorNoPoints);
+            if (appState.transformationType === 'Conversion' && appState.inputCoord === appState.outputCoord) return alert(uiStrings[appState.lang].sameSystemError);
+
+            dom.transformBtn.disabled = true;
+            dom.transformBtn.innerHTML = `<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> <span data-lang="processing">${uiStrings[appState.lang].processing}</span>`;
+            
+            const system = dom.inputSystem.value;
+            const systemConfig = config.systems[system];
+            
+            let grid = null;
+            if (appState.transformationType === 'Grade') {
+                const gridName = systemConfig.grid;
+                grid = await getGridData(gridName);
+                if (!grid) {
+                    dom.transformBtn.disabled = false;
+                    dom.transformBtn.innerHTML = `<i data-lucide="rotate-cw" class="w-5 h-5"></i> <span data-lang="transform">${uiStrings[appState.lang].transform}</span>`;
+                    lucide.createIcons();
+                    return;
+                }
+                dom.resultsInfo.textContent = `${uiStrings[appState.lang].usingGrid} ${gridName}.json`;
+            } else {
+                 dom.resultsInfo.textContent = '';
+            }
+            
+            appState.results = [];
+            for (const point of appState.points) {
+                let result;
+                if (appState.transformationType === 'Grade') result = transformWithGrid(point, grid);
+                else if (appState.transformationType === 'Parameter') result = transformWithParameters(point);
+                else if (appState.transformationType === 'Conversion') result = convertCoordinates(point);
+                appState.results.push({ ...point, output: result.output || ['Error'], uncertainty: result.uncertainty, error: result.error });
+            }
+            
+            renderResults();
+            updateMap();
+            dom.transformBtn.disabled = false;
+            dom.transformBtn.innerHTML = `<i data-lucide="rotate-cw" class="w-5 h-5"></i> <span data-lang="transform">${uiStrings[appState.lang].transform}</span>`;
+            lucide.createIcons();
+        }
+
+        function renderResults() {
+            dom.resultsTableBody.innerHTML = '';
+            if (appState.results.length === 0) {
+                dom.resultsTableBody.appendChild(dom.noResultsRow);
+                dom.exportCsvBtn.disabled = true;
+                dom.exportTxtBtn.disabled = true;
+                return;
+            }
+            appState.results.forEach(res => {
+                const row = document.createElement('tr');
+                row.className = "border-b border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50";
+                let cells = `<td class="p-2 font-medium">${res.name}</td>`;
+                if (res.error) {
+                    const colspan = 6;
+                    cells += `<td colspan="${colspan}" class="p-2 text-center text-red-500">${res.error}</td>`;
+                } else {
+                    cells += `<td class="p-2">${parseFloat(res.values[0]).toFixed(6)}</td>`;
+                    cells += `<td class="p-2">${parseFloat(res.values[1]).toFixed(6)}</td>`;
+                    cells += `<td class="p-2 font-semibold text-emerald-600 dark:text-emerald-400">${typeof res.output[0] === 'number' ? res.output[0].toFixed(6) : res.output[0]}</td>`;
+                    cells += `<td class="p-2 font-semibold text-emerald-600 dark:text-emerald-400">${typeof res.output[1] === 'number' ? res.output[1].toFixed(6) : res.output[1]}</td>`;
+                    if (appState.transformationType === 'Grade' && res.uncertainty) {
+                        cells += `<td class="p-2 text-gray-500">${res.uncertainty[0].toFixed(3)}</td>`;
+                        cells += `<td class="p-2 text-gray-500">${res.uncertainty[1].toFixed(3)}</td>`;
+                    }
+                }
+                row.innerHTML = cells;
+                dom.resultsTableBody.appendChild(row);
+            });
+            dom.exportCsvBtn.disabled = false;
+            dom.exportTxtBtn.disabled = false;
+        }
+        
+        function initMap() {
+            appState.map = L.map('map').setView([-15.78, -47.92], 4);
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(appState.map);
+            appState.inputMarkers.addTo(appState.map);
+            appState.outputMarkers.addTo(appState.map);
+        }
+
+        function updateMap() {
+            appState.inputMarkers.clearLayers();
+            appState.outputMarkers.clearLayers();
+            const validResults = appState.results.filter(r => !r.error && r.output.length >= 2);
+            if(validResults.length === 0) return;
+            const bounds = [];
+            validResults.forEach(res => {
+                const inputLat = parseFloat(res.values[0]);
+                const inputLon = parseFloat(res.values[1]);
+                if (!isNaN(inputLat) && !isNaN(inputLon)) {
+                    const marker = L.marker([inputLat, inputLon]).bindPopup(`<b>${res.name} (Entrada)</b><br>Lat: ${inputLat.toFixed(6)}<br>Lon: ${inputLon.toFixed(6)}`);
+                    appState.inputMarkers.addLayer(marker);
+                    bounds.push([inputLat, inputLon]);
+                }
+                const outputLat = parseFloat(res.output[0]);
+                const outputLon = parseFloat(res.output[1]);
+                if (!isNaN(outputLat) && !isNaN(outputLon)) {
+                    const marker = L.marker([outputLat, outputLon], { icon: L.icon({ iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png', shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41] }) })
+                        .bindPopup(`<b>${res.name} (Saída)</b><br>Lat: ${outputLat.toFixed(6)}<br>Lon: ${outputLon.toFixed(6)}`);
+                    appState.outputMarkers.addLayer(marker);
+                    bounds.push([outputLat, outputLon]);
+                }
+            });
+            if (bounds.length > 0) appState.map.fitBounds(bounds, { padding: [50, 50] });
+        }
+        
+        function exportData(format) {
+            if (appState.results.length === 0) return;
+            const headers = Array.from(dom.resultsTableHead.querySelectorAll('th')).map(th => th.textContent);
+            let content = headers.join(format === 'csv' ? ',' : '\t') + '\n';
+            appState.results.forEach(res => {
+                const rowData = [res.name];
+                if (res.error) {
+                    rowData.push('ERRO', res.error);
+                } else {
+                    rowData.push(parseFloat(res.values[0]).toFixed(6));
+                    rowData.push(parseFloat(res.values[1]).toFixed(6));
+                    rowData.push(typeof res.output[0] === 'number' ? res.output[0].toFixed(6) : res.output[0]);
+                    rowData.push(typeof res.output[1] === 'number' ? res.output[1].toFixed(6) : res.output[1]);
+                    if (appState.transformationType === 'Grade' && res.uncertainty) {
+                        rowData.push(res.uncertainty[0].toFixed(3));
+                        rowData.push(res.uncertainty[1].toFixed(3));
+                    }
+                }
+                content += rowData.join(format === 'csv' ? ',' : '\t') + '\n';
+            });
+            const blob = new Blob([content], { type: `text/${format === 'csv' ? 'csv' : 'plain'};charset=utf-8;` });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", `Coord-X_Resultados.${format}`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        function switchTab(event) {
+            const targetTab = event.currentTarget.dataset.tab;
+            dom.tabBtns.forEach(btn => btn.classList.toggle('active', btn.dataset.tab === targetTab));
+            dom.tabContents.forEach(content => content.classList.toggle('hidden', content.id !== `${targetTab}-tab`));
+        }
+
+        function handleTableClick(event) {
+            if (event.target.closest('.remove-point-btn')) {
+                const row = event.target.closest('tr');
+                row.remove();
+            }
+        }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            dom.fileNameDisplay.textContent = file.name;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const content = e.target.result;
+                    const lines = content.split(/\r\n|\n/).filter(line => line.trim() !== '');
+                    const delimiter = dom.csvDelimiter.value;
+                    const decimalSeparator = dom.csvDecimal.value;
+                    const delimiterRegex = new RegExp(delimiter === '\\t' ? '\t' : delimiter);
+                    dom.pointsTableBody.innerHTML = '';
+                    lines.forEach(line => {
+                        const parts = line.split(delimiterRegex);
+                        const name = parts[0];
+                        const values = parts.slice(1).map(v => decimalSeparator === ',' ? v.trim().replace(',', '.') : v.trim());
+                        addPointRow(name, values);
+                    });
+                } catch (error) {
+                    alert(uiStrings[appState.lang].fileReadError);
+                    console.error("File read error:", error);
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        init();
+    });
+    </script>
+</body>
+</html>
+
