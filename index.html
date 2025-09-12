@@ -172,6 +172,9 @@
                     <div class="flex justify-between items-center mb-2">
                         <h3 class="font-bold" data-lang="results">Resultados</h3>
                         <div class="flex items-center space-x-2">
+                             <button id="clear-all-btn" class="p-2 text-xs bg-red-500 text-white rounded-md hover:bg-red-600 flex items-center">
+                                <i data-lucide="trash-2" class="w-4 h-4 mr-1"></i> <span data-lang="clearAll">Limpar Tudo</span>
+                            </button>
                              <button id="toggle-input-markers-btn" class="p-2 text-xs bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 flex items-center">
                                 <!-- O conteúdo deste botão é gerenciado por JavaScript -->
                             </button>
@@ -228,6 +231,7 @@
             importFileBtn: document.getElementById('import-file-btn'),
             exportCsvBtn: document.getElementById('export-csv-btn'),
             exportTxtBtn: document.getElementById('export-txt-btn'),
+            clearAllBtn: document.getElementById('clear-all-btn'),
             tabBtns: document.querySelectorAll('.tab-btn'),
             tabContents: document.querySelectorAll('.tab-content'),
             csvDelimiter: document.getElementById('csv-delimiter'),
@@ -297,6 +301,7 @@
                 dot: "Ponto (.)", commaDecimal: "Vírgula (,)",
                 showInput: "Mostrar Entradas", hideInput: "Ocultar Entradas",
                 importFileAction: "Importar Arquivo",
+                clearAll: "Limpar Tudo",
             },
             en: {
                 subtitle: "by Jairo Ivo C. Brito | TRAMA Lab - UFC",
@@ -325,6 +330,7 @@
                 dot: "Dot (.)", commaDecimal: "Comma (,)",
                 showInput: "Show Inputs", hideInput: "Hide Inputs",
                 importFileAction: "Import File",
+                clearAll: "Clear All",
             }
         };
 
@@ -336,7 +342,6 @@
                 return gridDataCache[gridName];
             }
             try {
-                // ASSUME que os arquivos .json estão numa pasta "grades"
                 const response = await fetch(`./grades/${gridName}.json`);
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
@@ -354,7 +359,7 @@
         // --- LÓGICA DE TRANSFORMAÇÃO ---
         
         function transformWithGrid(point, grid) {
-            const sg = grid.sub_grids[0]; // Assumindo uma única sub-grade por arquivo
+            const sg = grid.sub_grids[0];
             const lat = parseFloat(point.values[0]);
             const lon = parseFloat(point.values[1]);
 
@@ -414,10 +419,13 @@
         // --- INICIALIZAÇÃO E LÓGICA DA UI ---
         
         function init() {
-            // Lógica de Tema refatorada para ser mais direta
             const applyTheme = (theme) => {
                 appState.theme = theme;
-                dom.html.classList.toggle('dark', theme === 'dark');
+                if (theme === 'dark') {
+                    dom.html.classList.add('dark');
+                } else {
+                    dom.html.classList.remove('dark');
+                }
                 lucide.createIcons();
             };
             
@@ -456,8 +464,34 @@
             dom.importFileBtn.addEventListener('click', processSelectedFile);
             dom.exportCsvBtn.addEventListener('click', () => exportData('csv'));
             dom.exportTxtBtn.addEventListener('click', () => exportData('txt'));
+            dom.clearAllBtn.addEventListener('click', clearAll);
             dom.tabBtns.forEach(btn => btn.addEventListener('click', switchTab));
             dom.toggleInputMarkersBtn.addEventListener('click', toggleInputMarkers);
+        }
+        
+        function clearAll() {
+            appState.points = [];
+            appState.results = [];
+            appState.selectedFile = null;
+
+            dom.pointsTableBody.innerHTML = '';
+            dom.resultsTableBody.innerHTML = '';
+            dom.resultsTableBody.appendChild(dom.noResultsRow);
+
+            appState.inputMarkers.clearLayers();
+            appState.outputMarkers.clearLayers();
+
+            dom.exportCsvBtn.disabled = true;
+            dom.exportTxtBtn.disabled = true;
+            dom.importFileBtn.disabled = true;
+
+            dom.fileNameDisplay.textContent = uiStrings[appState.lang].supportedFormats;
+            dom.resultsInfo.textContent = '';
+            
+            dom.fileInput.value = '';
+
+            addPointRow();
+            appState.map.setView([-15.78, -47.92], 4);
         }
 
         function applyLanguageStrings(lang) {
