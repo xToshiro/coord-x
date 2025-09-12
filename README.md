@@ -55,9 +55,17 @@ A aplicação foi construída utilizando tecnologias web padrão (HTML, CSS e Ja
 
 ### Como Executar
 
-Por restrições de segurança dos navegadores modernos (política de CORS), o arquivo `index.html` não pode carregar os arquivos de grade `.json` locais diretamente ao ser aberto com `file:///...`.
+**Acesso Online (Recomendado)**
 
-Para executar a aplicação corretamente, é necessário servi-la a partir de um servidor web local. A maneira mais simples de fazer isso é usando a extensão **Live Server** no Visual Studio Code, ou através do Python:
+A aplicação está hospedada e pode ser acessada diretamente através do seguinte link, sem necessidade de instalação:
+
+**[Acessar Coord-X TRAMA](https://xtoshiro.github.io/coord-x/)**
+
+**Executando Localmente**
+
+Caso deseje executar o projeto localmente, por restrições de segurança dos navegadores modernos (política de CORS), o arquivo `index.html` não pode carregar os arquivos de grade `.json` diretamente do sistema de arquivos (`file:///...`).
+
+Para executar a aplicação localmente, é necessário servi-la a partir de um servidor web. A maneira mais simples de fazer isso é usando a extensão **Live Server** no Visual Studio Code, ou através do Python:
 
 1.  Navegue até o diretório do projeto no seu terminal.
 2.  Execute o comando:
@@ -95,13 +103,13 @@ Este projeto está licenciado sob a **GNU General Public License v3.0**. Veja o 
 ## 🇺🇸 English (US)
 
 ### Table of Contents
-- [About The Project](#about-the-project)
-- [Features](#features)
-- [Project Structure](#project-structure)
+- [About The Project](#about-the-project-1)
+- [Features](#features-1)
+- [Project Structure](#project-structure-1)
 - [Getting Started](#getting-started)
-- [Development Process: The GSB to JSON Conversion](#development-process-the-gsb-to-json-conversion)
-- [License](#license)
-- [Author](#author)
+- [Development Process: The GSB to JSON Conversion](#development-process-the-gsb-to-json-conversion-1)
+- [License](#license-1)
+- [Author](#author-1)
 
 ### About The Project
 
@@ -147,11 +155,45 @@ The application was built using standard web technologies (HTML, CSS, and JavaSc
 
 ### Getting Started
 
-Due to modern browser security restrictions (CORS policy), the `index.html` file cannot load the local `.json` grid files directly when opened with `file:///...`.
+**Online Access (Recommended)**
 
-To run the application correctly, you need to serve it from a local web server. The easiest way is using the **Live Server** extension in Visual Studio Code, or via Python:
+The application is hosted and can be accessed directly via the following link, with no installation required:
+
+**[Access Coord-X TRAMA](https://xtoshiro.github.io/coord-x/)**
+
+**Running Locally**
+
+If you wish to run the project locally, due to modern browser security restrictions (CORS policy), the `index.html` file cannot load the local `.json` grid files directly from the filesystem (`file:///...`).
+
+To run the application locally, you need to serve it from a web server. The easiest way is using the **Live Server** extension in Visual Studio Code, or via Python:
 
 1.  Navigate to the project directory in your terminal.
 2.  Run the command:
     ```bash
     python -m http.server
+    ```
+3.  Open your browser and go to `http://localhost:8000`.
+
+### Development Process: The GSB to JSON Conversion
+
+A major technical challenge of the project was using the official IBGE correction grids, which are distributed in the binary `.GSB` (Grid Shift Binary) format, an implementation of the NTv2 standard.
+
+To enable JavaScript to read and process this data, the `gsb_to_json_converter.py` script was developed. This script was designed to:
+
+1.  Read the complex binary structure of the `.GSB` files.
+2.  Correctly interpret the headers and shift data, handling challenges such as byte order (*endianness*).
+3.  Extract the essential information (grid boundaries, increments, and lat/lon correction values).
+4.  Export this data into a structured `.json` format that is easily consumed by the web application.
+
+This process was crucial to ensure that the grid transformations use official data, thereby guaranteeing the accuracy of the results.
+
+### License
+
+This project is licensed under the **GNU General Public License v3.0**. See the [LICENSE](LICENSE) file for more details.
+
+### Author
+
+**Jairo Ivo Castro Brito**
+- PhD Student, Department of Transportation Engineering
+- Laboratory of Transportation and Environment (TRAMA)
+- Federal University of Ceará (UFC)
