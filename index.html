@@ -382,17 +382,14 @@
             return { lat, lon, h };
         }
         
-        // Placeholder for UTM conversion
         function geodeticToUTM(lat, lon) { 
             const zone = Math.floor((lon + 180) / 6) + 1;
-            // Simplified calculation for demonstration
             const E = 500000 + (lon - (-183 + zone * 6)) * 111111 * Math.cos(lat * Math.PI / 180);
             const N = (lat > 0 ? 0 : 10000000) + lat * 111111;
             return { E, N, zone, hemisphere: lat >= 0 ? 'N' : 'S' };
         }
 
         function utmToGeodetic(E, N, zone, hemisphere) {
-            // Simplified calculation for demonstration
             const lon0 = -183 + zone * 6;
             const lat = (N - (hemisphere === 'N' ? 0 : 10000000)) / 111111;
             const lon = ((E - 500000) / (111111 * Math.cos(lat * Math.PI / 180))) + lon0;
@@ -400,6 +397,48 @@
         }
         
         // --- LÓGICA DE TRANSFORMAÇÃO ---
+        function transformWithGrid(point, grid) {
+            const sg = grid.sub_grids[0];
+            const lat = parseFloat(point.values[0]);
+            const lon = parseFloat(point.values[1]);
+
+            if(isNaN(lat) || isNaN(lon)) return { error: uiStrings[appState.lang].errorInvalidCoords };
+
+            const lonAbs = Math.abs(lon);
+            const south = sg.S_LAT, north = sg.N_LAT, west = Math.min(sg.W_LON, sg.E_LON), east = Math.max(sg.W_LON, sg.E_LON);
+            
+            if (lat < south || lat > north || lonAbs < west || lonAbs > east) {
+                return { error: uiStrings[appState.lang].outOfBounds };
+            }
+
+            const pointsPerRow = Math.round(Math.abs(east - west) / sg.LON_INC) + 1;
+            const rowIndex = Math.floor((lat - south) / sg.LAT_INC);
+            const colIndex = Math.floor((lonAbs - west) / sg.LON_INC);
+
+            const idx_a = rowIndex * pointsPerRow + colIndex;
+            if ((idx_a + pointsPerRow + 1) >= sg.shifts.length) {
+                 return { error: "Ponto na borda superior da grade, extrapolação não implementada." };
+            }
+
+            const shift_a = sg.shifts[idx_a], shift_b = sg.shifts[idx_a + 1], shift_c = sg.shifts[idx_a + pointsPerRow], shift_d = sg.shifts[idx_a + pointsPerRow + 1];
+
+            const lat_a = south + rowIndex * sg.LAT_INC;
+            const lon_a = west + colIndex * sg.LON_INC;
+            const x = (lat - lat_a) / sg.LAT_INC;
+            const y = (lonAbs - lon_a) / sg.LON_INC;
+            
+            const interpolatedShifts = [0, 0, 0, 0];
+            for (let i = 0; i < 4; i++) {
+                interpolatedShifts[i] = (shift_a[i] * (1 - x) * (1 - y)) + (shift_c[i] * x * (1 - y)) + (shift_b[i] * (1 - x) * y) + (shift_d[i] * x * y);
+            }
+            
+            const [dLat, dLon, accLat, accLon] = interpolatedShifts;
+            
+            return {
+                output: [lat + dLat, lon - dLon],
+                uncertainty: [accLat, accLon]
+            };
+        }
         
         function getTransformationPipeline(point) {
             const inputSys = dom.inputSystem.value;
@@ -408,10 +447,9 @@
             const outputType = appState.outputCoord;
             
             if (inputSys === outputSys) {
-                // É apenas uma conversão de tipo de coordenada
                 return (p) => {
                     const inputEllipsoid = config.ellipsoids[config.systems[inputSys].ellipsoid];
-                    let geo = p;
+                    let geo = {lat: p.values[0], lon: p.values[1], h: p.values[2]};
                     if (inputType === 'UTM') geo = utmToGeodetic(p.values[0], p.values[1], parseInt(p.values[2]), p.values[2].slice(-1));
                     if (inputType === 'CART') geo = cartesianToGeodetic(p.values[0], p.values[1], p.values[2], inputEllipsoid);
 
@@ -421,12 +459,11 @@
                         return { output: [utm.E, utm.N, `${utm.zone}${utm.hemisphere}`, geo.h || p.values[3] || 0] };
                     }
                     if (outputType === 'CART') {
-                         const cart = geodeticToCartesian(geo.lat, geo.lon, geo.h || 0, inputEllipsoid);
+                         const cart = geodeticToCartesian(geo.lat * Math.PI/180, geo.lon * Math.PI/180, geo.h || 0, inputEllipsoid);
                          return { output: [cart.X, cart.Y, cart.Z] };
                     }
                 }
             } else {
-                 // É uma transformação de datum
                  return async (p) => {
                     let geoIn = { lat: p.values[0], lon: p.values[1], h: p.values[2] || 0};
                     let geoOut;
@@ -472,7 +509,11 @@
         function init() {
             const applyTheme = (theme) => {
                 appState.theme = theme;
-                dom.html.classList.toggle('dark', theme === 'dark');
+                if (theme === 'dark') {
+                    dom.html.classList.add('dark');
+                } else {
+                    dom.html.classList.remove('dark');
+                }
                 lucide.createIcons();
             };
             
@@ -497,6 +538,7 @@
             setupEventListeners();
             setLanguage(lang);
         }
+
 
         function setupEventListeners() {
             dom.languageSwitcher.addEventListener('change', (e) => setLanguage(e.target.value));
@@ -568,7 +610,7 @@
                 dom.outputSystem.disabled = true;
             } else {
                 dom.transformationTypeText.textContent = uiStrings[appState.lang][infoKey];
-                dom.outputSystem.disabled = true; // Mantém desabilitado por enquanto
+                dom.outputSystem.disabled = true; 
             }
 
             const currentInputType = dom.inputCoordType.value || systemConfig.coordTypes[0];
