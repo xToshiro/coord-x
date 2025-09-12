@@ -149,6 +149,10 @@
                                     </select>
                                 </div>
                             </div>
+                            <button id="import-file-btn" class="mt-2 w-full flex items-center justify-center p-2 bg-emerald-500 text-white rounded-md hover:bg-emerald-600 transition-colors disabled:bg-gray-400 dark:disabled:bg-gray-600" disabled>
+                                <i data-lucide="file-check-2" class="w-4 h-4 mr-2"></i>
+                                <span data-lang="importFileAction">Importar Arquivo</span>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -221,6 +225,7 @@
             noResultsRow: document.getElementById('no-results-row'),
             fileInput: document.getElementById('file-input'),
             fileNameDisplay: document.getElementById('file-name'),
+            importFileBtn: document.getElementById('import-file-btn'),
             exportCsvBtn: document.getElementById('export-csv-btn'),
             exportTxtBtn: document.getElementById('export-txt-btn'),
             tabBtns: document.querySelectorAll('.tab-btn'),
@@ -243,6 +248,7 @@
             inputCoord: 'GEO_DEC', // GEO_DEC, UTM, CART
             outputCoord: 'UTM',
             showInputMarkers: true,
+            selectedFile: null,
         };
 
         // --- CONFIGURAÇÕES E DADOS ---
@@ -290,6 +296,7 @@
                 comma: "Vírgula (,)", semicolon: "Ponto e Vírgula (;)", tab: "Tabulação (Tab)",
                 dot: "Ponto (.)", commaDecimal: "Vírgula (,)",
                 showInput: "Mostrar Entradas", hideInput: "Ocultar Entradas",
+                importFileAction: "Importar Arquivo",
             },
             en: {
                 subtitle: "by Jairo Ivo C. Brito | TRAMA Lab - UFC",
@@ -317,6 +324,7 @@
                 comma: "Comma (,)", semicolon: "Semicolon (;)", tab: "Tab",
                 dot: "Dot (.)", commaDecimal: "Comma (,)",
                 showInput: "Show Inputs", hideInput: "Hide Inputs",
+                importFileAction: "Import File",
             }
         };
 
@@ -352,68 +360,45 @@
 
             if(isNaN(lat) || isNaN(lon)) return { error: uiStrings[appState.lang].errorInvalidCoords };
 
-            // Longitudes no Brasil são negativas, mas as grades usam valores positivos a Oeste.
             const lonAbs = Math.abs(lon);
-
-            // Verificação de limites
-            const south = sg.S_LAT;
-            const north = sg.N_LAT;
-            const west = Math.min(sg.W_LON, sg.E_LON);
-            const east = Math.max(sg.W_LON, sg.E_LON);
+            const south = sg.S_LAT, north = sg.N_LAT, west = Math.min(sg.W_LON, sg.E_LON), east = Math.max(sg.W_LON, sg.E_LON);
             
             if (lat < south || lat > north || lonAbs < west || lonAbs > east) {
                 return { error: uiStrings[appState.lang].outOfBounds };
             }
 
-            // Cálculo dos índices da célula da grade (conforme documentação)
             const pointsPerRow = Math.round(Math.abs(east - west) / sg.LON_INC) + 1;
-            
             const rowIndex = Math.floor((lat - south) / sg.LAT_INC);
             const colIndex = Math.floor((lonAbs - west) / sg.LON_INC);
 
-            // Índices dos 4 cantos da célula
             const idx_a = rowIndex * pointsPerRow + colIndex;
-            const idx_b = idx_a + 1;
-            const idx_c = idx_a + pointsPerRow;
-            const idx_d = idx_c + 1;
-
-            if (idx_d >= sg.shifts.length) {
+            if ((idx_a + pointsPerRow + 1) >= sg.shifts.length) {
                  return { error: "Ponto na borda superior da grade, extrapolação não implementada." };
             }
 
-            const shift_a = sg.shifts[idx_a] || [0,0,0,0];
-            const shift_b = sg.shifts[idx_b] || [0,0,0,0];
-            const shift_c = sg.shifts[idx_c] || [0,0,0,0];
-            const shift_d = sg.shifts[idx_d] || [0,0,0,0];
+            const shift_a = sg.shifts[idx_a], shift_b = sg.shifts[idx_a + 1], shift_c = sg.shifts[idx_a + pointsPerRow], shift_d = sg.shifts[idx_a + pointsPerRow + 1];
 
-            // Fatores de interpolação (x, y normalizados de 0 a 1)
             const lat_a = south + rowIndex * sg.LAT_INC;
             const lon_a = west + colIndex * sg.LON_INC;
-
             const x = (lat - lat_a) / sg.LAT_INC;
             const y = (lonAbs - lon_a) / sg.LON_INC;
             
-            // Interpolação bilinear para cada valor (dLat, dLon, accLat, accLon)
             const interpolatedShifts = [0, 0, 0, 0];
             for (let i = 0; i < 4; i++) {
-                const val_a = shift_a[i], val_b = shift_b[i], val_c = shift_c[i], val_d = shift_d[i];
-                interpolatedShifts[i] = (val_a * (1 - x) * (1 - y)) + (val_c * x * (1 - y)) + (val_b * (1 - x) * y) + (val_d * x * y);
+                interpolatedShifts[i] = (shift_a[i] * (1 - x) * (1 - y)) + (shift_c[i] * x * (1 - y)) + (shift_b[i] * (1 - x) * y) + (shift_d[i] * x * y);
             }
             
             const [dLat, dLon, accLat, accLon] = interpolatedShifts;
             
             return {
-                output: [lat + dLat, lon - dLon], // Subtrai dLon pois a grade indica deslocamento para Oeste.
+                output: [lat + dLat, lon - dLon],
                 uncertainty: [accLat, accLon]
             };
         }
 
         function transformWithParameters(point) {
-            const lat = parseFloat(point.values[0]);
-            const lon = parseFloat(point.values[1]);
-            const dLat = -0.0006; 
-            const dLon = 0.00003; 
-            return { output: [lat + dLat, lon + dLon] };
+            const lat = parseFloat(point.values[0]), lon = parseFloat(point.values[1]);
+            return { output: [lat - 0.0006, lon + 0.00003] };
         }
 
         function convertCoordinates(point) {
@@ -432,11 +417,7 @@
             // Lógica de Tema refatorada para ser mais direta
             const applyTheme = (theme) => {
                 appState.theme = theme;
-                if (theme === 'dark') {
-                    dom.html.classList.add('dark');
-                } else {
-                    dom.html.classList.remove('dark');
-                }
+                dom.html.classList.toggle('dark', theme === 'dark');
                 lucide.createIcons();
             };
             
@@ -444,7 +425,6 @@
             if (savedTheme) {
                 applyTheme(savedTheme);
             } else {
-                // Se não houver tema salvo, usa a preferência do sistema
                 const systemPrefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
                 applyTheme(systemPrefersDark ? 'dark' : 'light');
             }
@@ -460,7 +440,7 @@
 
             initMap();
             setupEventListeners();
-            setLanguage(lang); // Aplica o idioma e atualiza a UI
+            setLanguage(lang);
         }
 
 
@@ -473,6 +453,7 @@
             dom.pointsTableBody.addEventListener('click', handleTableClick);
             dom.transformBtn.addEventListener('click', handleTransform);
             dom.fileInput.addEventListener('change', handleFileSelect);
+            dom.importFileBtn.addEventListener('click', processSelectedFile);
             dom.exportCsvBtn.addEventListener('click', () => exportData('csv'));
             dom.exportTxtBtn.addEventListener('click', () => exportData('txt'));
             dom.tabBtns.forEach(btn => btn.addEventListener('click', switchTab));
@@ -484,11 +465,7 @@
             document.querySelectorAll('[data-lang]').forEach(el => {
                 const key = el.dataset.lang;
                 if (strings[key]) {
-                    if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA') {
-                        el.placeholder = strings[key];
-                    } else {
-                        el.textContent = strings[key];
-                    }
+                    el.tagName === 'INPUT' ? el.placeholder = strings[key] : el.textContent = strings[key];
                 }
             });
             document.querySelectorAll('[data-lang-opt]').forEach(el => {
@@ -531,32 +508,23 @@
                 option.textContent = config.coordTypes[typeKey].label;
                 select.appendChild(option);
             });
-            select.value = types.includes(selectedValue) ? selectedValue : (types.length > 0 ? types[0] : '');
+            select.value = types.includes(selectedValue) ? selectedValue : types[0] || '';
         }
         
         function updateTableHeaders() {
-            const inputType = appState.inputCoord;
-            const outputType = appState.outputCoord;
-            const inputTypeConfig = config.coordTypes[inputType];
-            const outputTypeConfig = config.coordTypes[outputType];
-            if (!inputTypeConfig || !outputTypeConfig) return;
-            let inputHeaders = `<tr><th class="p-2 w-1/4" data-lang="point">${uiStrings[appState.lang].point}</th>`;
-            inputTypeConfig.headers.forEach(h => inputHeaders += `<th class="p-2">${h}</th>`);
-            inputHeaders += `<th class="p-2 w-10"></th></tr>`;
-            dom.pointsTableHead.innerHTML = inputHeaders;
-            const inputs = dom.pointsTableBody.querySelectorAll('input[data-col]');
-            inputs.forEach(input => {
+            const inputType = appState.inputCoord, outputType = appState.outputCoord;
+            const inputConfig = config.coordTypes[inputType], outputConfig = config.coordTypes[outputType];
+            if (!inputConfig || !outputConfig) return;
+
+            dom.pointsTableHead.innerHTML = `<tr><th class="p-2 w-1/4" data-lang="point">${uiStrings[appState.lang].point}</th>${inputConfig.headers.map(h => `<th class="p-2">${h}</th>`).join('')}<th class="p-2 w-10"></th></tr>`;
+            dom.pointsTableBody.querySelectorAll('input[data-col]').forEach(input => {
                 const col = parseInt(input.dataset.col, 10);
-                if (inputTypeConfig.placeholders[col]) input.placeholder = inputTypeConfig.placeholders[col];
+                if (inputConfig.placeholders[col]) input.placeholder = inputConfig.placeholders[col];
             });
-            let resultsHeaders = `<tr><th class="p-2" data-lang="point">${uiStrings[appState.lang].point}</th>`;
-            resultsHeaders += `<th class="p-2">${inputTypeConfig.headers[0]} (In)</th>`;
-            resultsHeaders += `<th class="p-2">${inputTypeConfig.headers[1]} (In)</th>`;
-            resultsHeaders += `<th class="p-2">${outputTypeConfig.headers[0]} (Out)</th>`;
-            resultsHeaders += `<th class="p-2">${outputTypeConfig.headers[1]} (Out)</th>`;
+
+            let resultsHeaders = `<tr><th class="p-2" data-lang="point">${uiStrings[appState.lang].point}</th><th class="p-2">${inputConfig.headers[0]} (In)</th><th class="p-2">${inputConfig.headers[1]} (In)</th><th class="p-2">${outputConfig.headers[0]} (Out)</th><th class="p-2">${outputConfig.headers[1]} (Out)</th>`;
             if (appState.transformationType === 'Grade') {
-                resultsHeaders += `<th class="p-2" data-lang="sigmaLat">${uiStrings[appState.lang].sigmaLat}</th>`;
-                resultsHeaders += `<th class="p-2" data-lang="sigmaLon">${uiStrings[appState.lang].sigmaLon}</th>`;
+                resultsHeaders += `<th class="p-2" data-lang="sigmaLat">${uiStrings[appState.lang].sigmaLat}</th><th class="p-2" data-lang="sigmaLon">${uiStrings[appState.lang].sigmaLon}</th>`;
             }
             resultsHeaders += `</tr>`;
             dom.resultsTableHead.innerHTML = resultsHeaders;
@@ -565,26 +533,21 @@
         function addPointRow(name = '', values = []) {
             const rowCount = dom.pointsTableBody.rows.length;
             const row = dom.pointsTableBody.insertRow();
-            const inputType = appState.inputCoord;
-            const typeConfig = config.coordTypes[inputType];
+            const typeConfig = config.coordTypes[appState.inputCoord];
             let cellHtml = `<td class="p-1"><input type="text" value="${name || `${uiStrings[appState.lang].point} ${rowCount + 1}`}" class="w-full p-2 bg-transparent rounded-md focus:outline-none focus:bg-gray-100 dark:focus:bg-gray-700"></td>`;
-            for (let i = 0; i < typeConfig.headers.length; i++) {
+            typeConfig.headers.forEach((h, i) => {
                 cellHtml += `<td class="p-1"><input type="text" data-col="${i}" placeholder="${typeConfig.placeholders[i]}" value="${values[i] || ''}" class="w-full p-2 bg-transparent rounded-md focus:outline-none focus:bg-gray-100 dark:focus:bg-gray-700"></td>`;
-            }
+            });
             cellHtml += `<td class="p-1 text-center"><button class="remove-point-btn p-1 text-gray-400 hover:text-red-500 rounded-full"><i data-lucide="x-circle" class="w-4 h-4"></i></button></td>`;
             row.innerHTML = cellHtml;
             lucide.createIcons();
         }
         
         function updatePointsFromTable() {
-            appState.points = [];
-            const rows = dom.pointsTableBody.rows;
-            for (let row of rows) {
+            appState.points = Array.from(dom.pointsTableBody.rows).map(row => {
                 const inputs = row.querySelectorAll('input');
-                const name = inputs[0].value;
-                const values = Array.from(inputs).slice(1).map(inp => inp.value);
-                appState.points.push({ name, values });
-            }
+                return { name: inputs[0].value, values: Array.from(inputs).slice(1).map(inp => inp.value) };
+            });
         }
         
         async function handleTransform() {
@@ -618,7 +581,7 @@
                 let result;
                 if (appState.transformationType === 'Grade') result = transformWithGrid(point, grid);
                 else if (appState.transformationType === 'Parameter') result = transformWithParameters(point);
-                else if (appState.transformationType === 'Conversion') result = convertCoordinates(point);
+                else result = convertCoordinates(point);
                 appState.results.push({ ...point, output: result.output || ['Error'], uncertainty: result.uncertainty, error: result.error });
             }
             
@@ -642,8 +605,7 @@
                 row.className = "border-b border-gray-200 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50";
                 let cells = `<td class="p-2 font-medium">${res.name}</td>`;
                 if (res.error) {
-                    const colspan = 6;
-                    cells += `<td colspan="${colspan}" class="p-2 text-center text-red-500">${res.error}</td>`;
+                    cells += `<td colspan="6" class="p-2 text-center text-red-500">${res.error}</td>`;
                 } else {
                     cells += `<td class="p-2">${parseFloat(res.values[0]).toFixed(6)}</td>`;
                     cells += `<td class="p-2">${parseFloat(res.values[1]).toFixed(6)}</td>`;
@@ -677,15 +639,13 @@
             if(validResults.length === 0) return;
             const bounds = [];
             validResults.forEach(res => {
-                const inputLat = parseFloat(res.values[0]);
-                const inputLon = parseFloat(res.values[1]);
+                const [inputLat, inputLon] = res.values.map(parseFloat);
                 if (!isNaN(inputLat) && !isNaN(inputLon)) {
                     const marker = L.marker([inputLat, inputLon]).bindPopup(`<b>${res.name} (Entrada)</b><br>Lat: ${inputLat.toFixed(6)}<br>Lon: ${inputLon.toFixed(6)}`);
                     appState.inputMarkers.addLayer(marker);
                     bounds.push([inputLat, inputLon]);
                 }
-                const outputLat = parseFloat(res.output[0]);
-                const outputLon = parseFloat(res.output[1]);
+                const [outputLat, outputLon] = res.output.map(parseFloat);
                 if (!isNaN(outputLat) && !isNaN(outputLon)) {
                     const marker = L.marker([outputLat, outputLon], { icon: L.icon({ iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png', shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41] }) })
                         .bindPopup(`<b>${res.name} (Saída)</b><br>Lat: ${outputLat.toFixed(6)}<br>Lon: ${outputLon.toFixed(6)}`);
@@ -709,18 +669,8 @@
         function updateToggleMarkersButtonUI() {
             const btn = dom.toggleInputMarkersBtn;
             const lang = appState.lang;
-
-            if (appState.showInputMarkers) {
-                btn.innerHTML = `
-                    <i data-lucide="eye-off" class="w-4 h-4 mr-1"></i>
-                    <span data-lang="hideInput">${uiStrings[lang].hideInput}</span>
-                `;
-            } else {
-                btn.innerHTML = `
-                    <i data-lucide="eye" class="w-4 h-4 mr-1"></i>
-                    <span data-lang="showInput">${uiStrings[lang].showInput}</span>
-                `;
-            }
+            const show = appState.showInputMarkers;
+            btn.innerHTML = `<i data-lucide="${show ? 'eye-off' : 'eye'}" class="w-4 h-4 mr-1"></i><span data-lang="${show ? 'hideInput' : 'showInput'}">${uiStrings[lang][show ? 'hideInput' : 'showInput']}</span>`;
             lucide.createIcons();
         }
         
@@ -733,21 +683,18 @@
                 if (res.error) {
                     rowData.push('ERRO', res.error);
                 } else {
-                    rowData.push(parseFloat(res.values[0]).toFixed(6));
-                    rowData.push(parseFloat(res.values[1]).toFixed(6));
+                    rowData.push(parseFloat(res.values[0]).toFixed(6), parseFloat(res.values[1]).toFixed(6));
                     rowData.push(typeof res.output[0] === 'number' ? res.output[0].toFixed(6) : res.output[0]);
                     rowData.push(typeof res.output[1] === 'number' ? res.output[1].toFixed(6) : res.output[1]);
                     if (appState.transformationType === 'Grade' && res.uncertainty) {
-                        rowData.push(res.uncertainty[0].toFixed(3));
-                        rowData.push(res.uncertainty[1].toFixed(3));
+                        rowData.push(res.uncertainty[0].toFixed(3), res.uncertainty[1].toFixed(3));
                     }
                 }
                 content += rowData.join(format === 'csv' ? ',' : '\t') + '\n';
             });
             const blob = new Blob([content], { type: `text/${format === 'csv' ? 'csv' : 'plain'};charset=utf-8;` });
             const link = document.createElement("a");
-            const url = URL.createObjectURL(blob);
-            link.setAttribute("href", url);
+            link.setAttribute("href", URL.createObjectURL(blob));
             link.setAttribute("download", `Coord-X_Resultados.${format}`);
             document.body.appendChild(link);
             link.click();
@@ -762,15 +709,21 @@
 
         function handleTableClick(event) {
             if (event.target.closest('.remove-point-btn')) {
-                const row = event.target.closest('tr');
-                row.remove();
+                event.target.closest('tr').remove();
             }
         }
 
         function handleFileSelect(event) {
             const file = event.target.files[0];
             if (!file) return;
+            appState.selectedFile = file;
             dom.fileNameDisplay.textContent = file.name;
+            dom.importFileBtn.disabled = false;
+        }
+
+        function processSelectedFile() {
+            const file = appState.selectedFile;
+            if (!file) return;
             const reader = new FileReader();
             reader.onload = (e) => {
                 try {
@@ -779,6 +732,7 @@
                     const delimiter = dom.csvDelimiter.value;
                     const decimalSeparator = dom.csvDecimal.value;
                     const delimiterRegex = new RegExp(delimiter === '\\t' ? '\t' : delimiter);
+                    
                     dom.pointsTableBody.innerHTML = '';
                     lines.forEach(line => {
                         const parts = line.split(delimiterRegex);
@@ -786,6 +740,10 @@
                         const values = parts.slice(1).map(v => decimalSeparator === ',' ? v.trim().replace(',', '.') : v.trim());
                         addPointRow(name, values);
                     });
+                    
+                    // Mudar para a aba manual para mostrar os pontos importados
+                    switchTab({ currentTarget: document.querySelector('.tab-btn[data-tab="manual"]') });
+
                 } catch (error) {
                     alert(uiStrings[appState.lang].fileReadError);
                     console.error("File read error:", error);
