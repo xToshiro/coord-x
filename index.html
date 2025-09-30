@@ -359,13 +359,13 @@
         }
         
         // --- FUNÇÕES GEODÉSICAS ---
-        function geodeticToCartesian(lat, lon, h, ellipsoid) {
+        function geodeticToCartesian(latRad, lonRad, h, ellipsoid) {
             const { a, f } = ellipsoid;
             const e2 = 2 * f - f * f;
-            const N = a / Math.sqrt(1 - e2 * Math.sin(lat) ** 2);
-            const X = (N + h) * Math.cos(lat) * Math.cos(lon);
-            const Y = (N + h) * Math.cos(lat) * Math.sin(lon);
-            const Z = ((1 - e2) * N + h) * Math.sin(lat);
+            const N = a / Math.sqrt(1 - e2 * Math.sin(latRad) ** 2);
+            const X = (N + h) * Math.cos(latRad) * Math.cos(lonRad);
+            const Y = (N + h) * Math.cos(latRad) * Math.sin(lonRad);
+            const Z = ((1 - e2) * N + h) * Math.sin(latRad);
             return { X, Y, Z };
         }
 
@@ -375,145 +375,141 @@
             const b = a * (1 - f);
             const p = Math.sqrt(X ** 2 + Y ** 2);
             const theta = Math.atan((Z * a) / (p * b));
-            const lon = Math.atan2(Y, X);
-            let lat = Math.atan((Z + e2 * b * Math.sin(theta) ** 3) / (p - e2 * a * Math.cos(theta) ** 3));
-            const N = a / Math.sqrt(1 - e2 * Math.sin(lat) ** 2);
-            const h = p / Math.cos(lat) - N;
-            return { lat, lon, h };
+            const lonRad = Math.atan2(Y, X);
+            let latRad = Math.atan((Z + e2 * b * Math.sin(theta) ** 3) / (p - e2 * a * Math.cos(theta) ** 3));
+            
+            let N = a / Math.sqrt(1 - e2 * Math.sin(latRad) ** 2);
+            let h = p / Math.cos(latRad) - N;
+
+            // Iteração para precisão (opcional, mas recomendado)
+            let lat_old = 0;
+            for(let i=0; i<5 && Math.abs(latRad - lat_old) > 1e-12; i++){
+                lat_old = latRad;
+                N = a / Math.sqrt(1 - e2 * Math.sin(lat_old) ** 2);
+                h = p / Math.cos(lat_old) - N;
+                latRad = Math.atan(Z / (p * (1 - e2 * N / (N + h))));
+            }
+            return { lat: latRad * 180 / Math.PI, lon: lonRad * 180 / Math.PI, h };
         }
         
         function geodeticToUTM(lat, lon) { 
+            const latRad = lat * Math.PI / 180;
+            const lonRad = lon * Math.PI / 180;
             const zone = Math.floor((lon + 180) / 6) + 1;
-            const E = 500000 + (lon - (-183 + zone * 6)) * 111111 * Math.cos(lat * Math.PI / 180);
-            const N = (lat > 0 ? 0 : 10000000) + lat * 111111;
-            return { E, N, zone, hemisphere: lat >= 0 ? 'N' : 'S' };
+            const lon0 = (zone * 6 - 183) * Math.PI / 180;
+
+            const { a, f } = config.ellipsoids.GRS80;
+            const e2 = 2 * f - f * f;
+            const N = a / Math.sqrt(1 - e2 * Math.sin(latRad) ** 2);
+            const T = Math.tan(latRad) ** 2;
+            const C = e2 / (1 - e2) * Math.cos(latRad) ** 2;
+            const A = (lonRad - lon0) * Math.cos(latRad);
+
+            const M = a * ((1 - e2 / 4 - 3 * e2 ** 2 / 64 - 5 * e2 ** 3 / 256) * latRad
+                - (3 * e2 / 8 + 3 * e2 ** 2 / 32 + 45 * e2 ** 3 / 1024) * Math.sin(2 * latRad)
+                + (15 * e2 ** 2 / 256 + 45 * e2 ** 3 / 1024) * Math.sin(4 * latRad)
+                - (35 * e2 ** 3 / 3072) * Math.sin(6 * latRad));
+            
+            const k0 = 0.9996;
+            const E = k0 * N * (A + (1 - T + C) * A ** 3 / 6 + (5 - 18 * T + T ** 2 + 72 * C - 58 * e2) * A ** 5 / 120) + 500000.0;
+            const N_utm = k0 * (M + N * Math.tan(latRad) * (A ** 2 / 2 + (5 - T + 9 * C + 4 * C ** 2) * A ** 4 / 24 + (61 - 58 * T + T ** 2 + 600 * C - 330 * e2) * A ** 6 / 720));
+            
+            return { E, N: lat >= 0 ? N_utm : N_utm + 10000000, zone, hemisphere: lat >= 0 ? 'N' : 'S' };
         }
 
-        function utmToGeodetic(E, N, zone, hemisphere) {
-            const lon0 = -183 + zone * 6;
-            const lat = (N - (hemisphere === 'N' ? 0 : 10000000)) / 111111;
-            const lon = ((E - 500000) / (111111 * Math.cos(lat * Math.PI / 180))) + lon0;
-            return { lat, lon };
+        function utmToGeodetic(E, N_utm, zone, hemisphere) {
+            const k0 = 0.9996;
+            const { a, f } = config.ellipsoids.GRS80;
+            const e2 = 2 * f - f * f;
+            const e1 = (1 - Math.sqrt(1 - e2)) / (1 + Math.sqrt(1 - e2));
+
+            const x = E - 500000.0;
+            const y = hemisphere === 'N' ? N_utm : N_utm - 10000000;
+            const lon0 = (zone * 6 - 183) * Math.PI / 180;
+
+            const M = y / k0;
+            const mu = M / (a * (1 - e2 / 4 - 3 * e2 ** 2 / 64 - 5 * e2 ** 3 / 256));
+            const lat1 = mu + (3 * e1 / 2 - 27 * e1 ** 3 / 32) * Math.sin(2 * mu)
+                        + (21 * e1 ** 2 / 16 - 55 * e1 ** 4 / 32) * Math.sin(4 * mu)
+                        + (151 * e1 ** 3 / 96) * Math.sin(6 * mu);
+            
+            const C1 = e2 / (1 - e2) * Math.cos(lat1) ** 2;
+            const T1 = Math.tan(lat1) ** 2;
+            const N1 = a / Math.sqrt(1 - e2 * Math.sin(lat1) ** 2);
+            const R1 = a * (1 - e2) / (1 - e2 * Math.sin(lat1) ** 2) ** 1.5;
+            const D = x / (N1 * k0);
+
+            const latRad = lat1 - (N1 * Math.tan(lat1) / R1) * (D ** 2 / 2 - (5 + 3 * T1 + 10 * C1 - 4 * C1 ** 2 - 9 * e2) * D ** 4 / 24 + (61 + 90 * T1 + 298 * C1 + 45 * T1 ** 2 - 252 * e2 - 3 * C1 ** 2) * D ** 6 / 720);
+            const lonRad = lon0 + (D - (1 + 2 * T1 + C1) * D ** 3 / 6 + (5 - 2 * C1 + 28 * T1 - 3 * C1 ** 2 + 8 * e2 + 24 * T1 ** 2) * D ** 5 / 120) / Math.cos(lat1);
+
+            return { lat: latRad * 180 / Math.PI, lon: lonRad * 180 / Math.PI };
         }
         
         // --- LÓGICA DE TRANSFORMAÇÃO ---
-        function transformWithGrid(point, grid) {
-            const sg = grid.sub_grids[0];
-            const lat = parseFloat(point.values[0]);
-            const lon = parseFloat(point.values[1]);
-
-            if(isNaN(lat) || isNaN(lon)) return { error: uiStrings[appState.lang].errorInvalidCoords };
-
-            const lonAbs = Math.abs(lon);
-            const south = sg.S_LAT, north = sg.N_LAT, west = Math.min(sg.W_LON, sg.E_LON), east = Math.max(sg.W_LON, sg.E_LON);
-            
-            if (lat < south || lat > north || lonAbs < west || lonAbs > east) {
-                return { error: uiStrings[appState.lang].outOfBounds };
-            }
-
-            const pointsPerRow = Math.round(Math.abs(east - west) / sg.LON_INC) + 1;
-            const rowIndex = Math.floor((lat - south) / sg.LAT_INC);
-            const colIndex = Math.floor((lonAbs - west) / sg.LON_INC);
-
-            const idx_a = rowIndex * pointsPerRow + colIndex;
-            if ((idx_a + pointsPerRow + 1) >= sg.shifts.length) {
-                 return { error: "Ponto na borda superior da grade, extrapolação não implementada." };
-            }
-
-            const shift_a = sg.shifts[idx_a], shift_b = sg.shifts[idx_a + 1], shift_c = sg.shifts[idx_a + pointsPerRow], shift_d = sg.shifts[idx_a + pointsPerRow + 1];
-
-            const lat_a = south + rowIndex * sg.LAT_INC;
-            const lon_a = west + colIndex * sg.LON_INC;
-            const x = (lat - lat_a) / sg.LAT_INC;
-            const y = (lonAbs - lon_a) / sg.LON_INC;
-            
-            const interpolatedShifts = [0, 0, 0, 0];
-            for (let i = 0; i < 4; i++) {
-                interpolatedShifts[i] = (shift_a[i] * (1 - x) * (1 - y)) + (shift_c[i] * x * (1 - y)) + (shift_b[i] * (1 - x) * y) + (shift_d[i] * x * y);
-            }
-            
-            const [dLat, dLon, accLat, accLon] = interpolatedShifts;
-            
-            return {
-                output: [lat + dLat, lon - dLon],
-                uncertainty: [accLat, accLon]
-            };
-        }
-        
-        function getTransformationPipeline(point) {
-            const inputSys = dom.inputSystem.value;
-            const outputSys = dom.outputSystem.value;
+        function getTransformationPipeline() {
+            const inputSysId = dom.inputSystem.value;
+            const outputSysId = dom.outputSystem.value;
             const inputType = appState.inputCoord;
             const outputType = appState.outputCoord;
-            
-            if (inputSys === outputSys) {
-                return (p) => {
-                    const inputEllipsoid = config.ellipsoids[config.systems[inputSys].ellipsoid];
-                    let geo = {lat: p.values[0], lon: p.values[1], h: p.values[2]};
-                    if (inputType === 'UTM') geo = utmToGeodetic(p.values[0], p.values[1], parseInt(p.values[2]), p.values[2].slice(-1));
-                    if (inputType === 'CART') geo = cartesianToGeodetic(p.values[0], p.values[1], p.values[2], inputEllipsoid);
 
-                    if (outputType === 'GEO_DEC') return { output: [geo.lat, geo.lon, geo.h || p.values[2] || 0]};
-                    if (outputType === 'UTM') {
-                        const utm = geodeticToUTM(geo.lat, geo.lon);
-                        return { output: [utm.E, utm.N, `${utm.zone}${utm.hemisphere}`, geo.h || p.values[3] || 0] };
-                    }
-                    if (outputType === 'CART') {
-                         const cart = geodeticToCartesian(geo.lat * Math.PI/180, geo.lon * Math.PI/180, geo.h || 0, inputEllipsoid);
-                         return { output: [cart.X, cart.Y, cart.Z] };
+            const inSys = config.systems[inputSysId];
+            const outSys = config.systems[outputSysId];
+            const inEllipsoid = config.ellipsoids[inSys.ellipsoid];
+            const outEllipsoid = config.ellipsoids[outSys.ellipsoid];
+
+            return async (point) => {
+                let p = { lat: NaN, lon: NaN, h: 0 }; // Ponto geodésico em graus
+
+                // 1. Converter entrada para geodésica, se necessário
+                if (inputType === 'GEO_DEC') {
+                    p = { lat: point.values[0], lon: point.values[1], h: point.values[2] || 0 };
+                } else if (inputType === 'UTM') {
+                    const geo = utmToGeodetic(point.values[0], point.values[1], parseInt(point.values[2]), point.values[2].slice(-1).toUpperCase());
+                    p = { ...geo, h: point.values[3] || 0 };
+                } else if (inputType === 'CART') {
+                    p = cartesianToGeodetic(point.values[0], point.values[1], point.values[2], inEllipsoid);
+                }
+                if (isNaN(p.lat) || isNaN(p.lon)) return { error: uiStrings[appState.lang].errorInvalidCoords };
+                
+                let geoOut = p;
+                let uncertainty = [0,0];
+
+                // 2. Transformar datum se necessário
+                if (inSys !== outSys) {
+                    if (inSys.type === 'Grade') {
+                        const grid = await getGridData(inSys.grid);
+                        if (!grid) return { error: 'Grid load failed' };
+                        const result = transformWithGrid({values: [p.lat, p.lon]}, grid);
+                        if(result.error) return result;
+                        geoOut = { lat: result.output[0], lon: result.output[1], h: p.h };
+                        uncertainty = result.uncertainty;
+
+                    } else if (inSys.type === 'Parameter') {
+                        const params = config.params_SAD69_SIRGAS2000;
+                        const cartIn = geodeticToCartesian(p.lat * Math.PI/180, p.lon * Math.PI/180, p.h, inEllipsoid);
+                        const cartOut = { X: cartIn.X + params.dX, Y: cartIn.Y + params.dY, Z: cartIn.Z + params.dZ };
+                        geoOut = cartesianToGeodetic(cartOut.X, cartOut.Y, cartOut.Z, outEllipsoid);
                     }
                 }
-            } else {
-                 return async (p) => {
-                    let geoIn = { lat: p.values[0], lon: p.values[1], h: p.values[2] || 0};
-                    let geoOut;
-                    let uncertainty = [0,0];
-
-                    const inputSystemConfig = config.systems[inputSys];
-                    const transformationType = inputSystemConfig.type;
-                    
-                    if (transformationType === 'Grade') {
-                        const grid = await getGridData(inputSystemConfig.grid);
-                        if (!grid) return { error: 'Grid load failed' };
-                        const result = transformWithGrid(p, grid);
-                        if(result.error) return result;
-                        geoOut = { lat: result.output[0], lon: result.output[1], h: geoIn.h };
-                        uncertainty = result.uncertainty;
-                    } else if (transformationType === 'Parameter') {
-                        const inEllipsoid = config.ellipsoids[inputSystemConfig.ellipsoid];
-                        const outEllipsoid = config.ellipsoids[config.systems[outputSys].ellipsoid];
-                        const params = config.params_SAD69_SIRGAS2000;
-                        
-                        const cartIn = geodeticToCartesian(geoIn.lat * Math.PI/180, geoIn.lon * Math.PI/180, geoIn.h, inEllipsoid);
-                        const cartOut = { X: cartIn.X + params.dX, Y: cartIn.Y + params.dY, Z: cartIn.Z + params.dZ };
-                        const geoOutRad = cartesianToGeodetic(cartOut.X, cartOut.Y, cartOut.Z, outEllipsoid);
-                        geoOut = { lat: geoOutRad.lat * 180/Math.PI, lon: geoOutRad.lon * 180/Math.PI, h: geoOutRad.h };
-                    }
-
-                    if (outputType === 'GEO_DEC') return { output: [geoOut.lat, geoOut.lon, geoOut.h], uncertainty };
-                    if (outputType === 'UTM') {
-                        const utm = geodeticToUTM(geoOut.lat, geoOut.lon);
-                        return { output: [utm.E, utm.N, `${utm.zone}${utm.hemisphere}`, geoOut.h], uncertainty };
-                    }
-                    if (outputType === 'CART') {
-                        const outEllipsoid = config.ellipsoids[config.systems[outputSys].ellipsoid];
-                        const cart = geodeticToCartesian(geoOut.lat * Math.PI/180, geoOut.lon * Math.PI/180, geoOut.h, outEllipsoid);
-                        return { output: [cart.X, cart.Y, cart.Z], uncertainty };
-                    }
-                 };
-            }
+                
+                // 3. Converter para o tipo de coordenada de saída
+                if (outputType === 'GEO_DEC') return { output: [geoOut.lat, geoOut.lon, geoOut.h], uncertainty };
+                if (outputType === 'UTM') {
+                    const utm = geodeticToUTM(geoOut.lat, geoOut.lon);
+                    return { output: [utm.E, utm.N, `${utm.zone}${utm.hemisphere}`, geoOut.h], uncertainty };
+                }
+                if (outputType === 'CART') {
+                    const cart = geodeticToCartesian(geoOut.lat * Math.PI/180, geoOut.lon * Math.PI/180, geoOut.h, outEllipsoid);
+                    return { output: [cart.X, cart.Y, cart.Z], uncertainty };
+                }
+            };
         }
 
         // --- INICIALIZAÇÃO E EVENT LISTENERS ---
-        
         function init() {
             const applyTheme = (theme) => {
                 appState.theme = theme;
-                if (theme === 'dark') {
-                    dom.html.classList.add('dark');
-                } else {
-                    dom.html.classList.remove('dark');
-                }
+                dom.html.classList.toggle('dark', theme === 'dark');
                 lucide.createIcons();
             };
             
@@ -538,7 +534,6 @@
             setupEventListeners();
             setLanguage(lang);
         }
-
 
         function setupEventListeners() {
             dom.languageSwitcher.addEventListener('change', (e) => setLanguage(e.target.value));
@@ -603,7 +598,7 @@
             const system = dom.inputSystem.value;
             const systemConfig = config.systems[system];
             appState.transformationType = systemConfig.type;
-            const infoKey = {'Grade': 'infoGrade', 'Parameter': 'infoParameter', 'Conversion': 'coordConversion'}[appState.transformationType];
+            const infoKey = {'Grade': 'gradeTransform', 'Parameter': 'paramTransform', 'Conversion': 'coordConversion'}[appState.transformationType];
             
             if (system === 'SIRGAS2000') {
                 dom.transformationTypeText.textContent = uiStrings[appState.lang].infoConversion;
@@ -648,8 +643,9 @@
                 if (inputConfig.placeholders[col]) input.placeholder = inputConfig.placeholders[col];
             });
 
-            let resultsHeaders = `<tr><th class="p-2" data-lang="point">${uiStrings[appState.lang].point}</th><th class="p-2">${inputConfig.headers[0]} (In)</th><th class="p-2">${inputConfig.headers[1]} (In)</th><th class="p-2">${outputConfig.headers[0]} (Out)</th><th class="p-2">${outputConfig.headers[1]} (Out)</th>`;
-            if (appState.transformationType === 'Grade') {
+            let resultsHeaders = `<tr><th class="p-2" data-lang="point">${uiStrings[appState.lang].point}</th>`;
+            outputConfig.headers.forEach(h => { resultsHeaders += `<th class="p-2">${h} (Out)</th>`; });
+            if (config.systems[dom.inputSystem.value].type === 'Grade') {
                 resultsHeaders += `<th class="p-2" data-lang="sigmaLat">${uiStrings[appState.lang].sigmaLat}</th><th class="p-2" data-lang="sigmaLon">${uiStrings[appState.lang].sigmaLon}</th>`;
             }
             resultsHeaders += `</tr>`;
@@ -716,10 +712,9 @@
                 if (res.error) {
                     cells += `<td colspan="6" class="p-2 text-center text-red-500">${res.error}</td>`;
                 } else {
-                    cells += `<td class="p-2">${res.values[0].toFixed(6)}</td>`;
-                    cells += `<td class="p-2">${res.values[1].toFixed(6)}</td>`;
-                    cells += `<td class="p-2 font-semibold text-emerald-600 dark:text-emerald-400">${typeof res.output[0] === 'number' ? res.output[0].toFixed(6) : res.output[0]}</td>`;
-                    cells += `<td class="p-2 font-semibold text-emerald-600 dark:text-emerald-400">${typeof res.output[1] === 'number' ? res.output[1].toFixed(6) : res.output[1]}</td>`;
+                    res.output.forEach(val => {
+                        cells += `<td class="p-2 font-semibold text-emerald-600 dark:text-emerald-400">${typeof val === 'number' ? val.toFixed(6) : val}</td>`;
+                    });
                     
                     if (config.systems[dom.inputSystem.value].type === 'Grade' && res.uncertainty) {
                         cells += `<td class="p-2 text-gray-500">${res.uncertainty[0].toFixed(3)}</td>`;
@@ -755,7 +750,21 @@
                     appState.inputMarkers.addLayer(marker);
                     bounds.push([inputLat, inputLon]);
                 }
-                const [outputLat, outputLon] = res.output;
+                
+                let [outputLat, outputLon] = [NaN, NaN];
+                if(appState.outputCoord === 'GEO_DEC') {
+                    [outputLat, outputLon] = res.output;
+                } else if(appState.outputCoord === 'UTM') {
+                    const geo = utmToGeodetic(res.output[0], res.output[1], parseInt(res.output[2]), res.output[2].slice(-1).toUpperCase());
+                    outputLat = geo.lat;
+                    outputLon = geo.lon;
+                } else if(appState.outputCoord === 'CART') {
+                     const outEllipsoid = config.ellipsoids[config.systems[dom.outputSystem.value].ellipsoid];
+                     const geo = cartesianToGeodetic(res.output[0], res.output[1], res.output[2], outEllipsoid);
+                     outputLat = geo.lat;
+                     outputLon = geo.lon;
+                }
+                
                 if (!isNaN(outputLat) && !isNaN(outputLon)) {
                     const marker = L.marker([outputLat, outputLon], { icon: L.icon({ iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png', shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png', iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41] }) })
                         .bindPopup(`<b>${res.name} (Saída)</b><br>Lat: ${outputLat.toFixed(6)}<br>Lon: ${outputLon.toFixed(6)}`);
@@ -793,9 +802,9 @@
                 if (res.error) {
                     rowData.push('ERRO', res.error);
                 } else {
-                    rowData.push(res.values[0].toFixed(6), res.values[1].toFixed(6));
-                    rowData.push(typeof res.output[0] === 'number' ? res.output[0].toFixed(6) : res.output[0]);
-                    rowData.push(typeof res.output[1] === 'number' ? res.output[1].toFixed(6) : res.output[1]);
+                    res.output.forEach(val => {
+                        rowData.push(typeof val === 'number' ? val.toFixed(6) : val);
+                    });
                     if (config.systems[dom.inputSystem.value].type === 'Grade' && res.uncertainty) {
                         rowData.push(res.uncertainty[0].toFixed(3), res.uncertainty[1].toFixed(3));
                     }
