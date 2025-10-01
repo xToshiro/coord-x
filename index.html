@@ -381,7 +381,6 @@
             let N = a / Math.sqrt(1 - e2 * Math.sin(latRad) ** 2);
             let h = p / Math.cos(latRad) - N;
 
-            // Iteração para precisão (opcional, mas recomendado)
             let lat_old = 0;
             for(let i=0; i<5 && Math.abs(latRad - lat_old) > 1e-12; i++){
                 lat_old = latRad;
@@ -446,6 +445,49 @@
         }
         
         // --- LÓGICA DE TRANSFORMAÇÃO ---
+        function transformWithGrid(point, grid) {
+            const sg = grid.sub_grids[0];
+            const lat = parseFloat(point.values[0]);
+            const lon = parseFloat(point.values[1]);
+
+            if(isNaN(lat) || isNaN(lon)) return { error: uiStrings[appState.lang].errorInvalidCoords };
+
+            const lonAbs = Math.abs(lon);
+            const south = sg.S_LAT, north = sg.N_LAT, west = Math.min(sg.W_LON, sg.E_LON), east = Math.max(sg.W_LON, sg.E_LON);
+            
+            if (lat < south || lat > north || lonAbs < west || lonAbs > east) {
+                return { error: uiStrings[appState.lang].outOfBounds };
+            }
+
+            const pointsPerRow = Math.round(Math.abs(east - west) / sg.LON_INC) + 1;
+            const rowIndex = Math.floor((lat - south) / sg.LAT_INC);
+            const colIndex = Math.floor((lonAbs - west) / sg.LON_INC);
+
+            const idx_a = rowIndex * pointsPerRow + colIndex;
+            if ((idx_a + pointsPerRow + 1) >= sg.shifts.length) {
+                 return { error: "Ponto na borda superior da grade, extrapolação não implementada." };
+            }
+
+            const shift_a = sg.shifts[idx_a], shift_b = sg.shifts[idx_a + 1], shift_c = sg.shifts[idx_a + pointsPerRow], shift_d = sg.shifts[idx_a + pointsPerRow + 1];
+
+            const lat_a = south + rowIndex * sg.LAT_INC;
+            const lon_a = west + colIndex * sg.LON_INC;
+            const x = (lat - lat_a) / sg.LAT_INC;
+            const y = (lonAbs - lon_a) / sg.LON_INC;
+            
+            const interpolatedShifts = [0, 0, 0, 0];
+            for (let i = 0; i < 4; i++) {
+                interpolatedShifts[i] = (shift_a[i] * (1 - x) * (1 - y)) + (shift_c[i] * x * (1 - y)) + (shift_b[i] * (1 - x) * y) + (shift_d[i] * x * y);
+            }
+            
+            const [dLat, dLon, accLat, accLon] = interpolatedShifts;
+            
+            return {
+                output: [lat + dLat, lon - dLon],
+                uncertainty: [accLat, accLon]
+            };
+        }
+        
         function getTransformationPipeline() {
             const inputSysId = dom.inputSystem.value;
             const outputSysId = dom.outputSystem.value;
@@ -744,7 +786,21 @@
             if(validResults.length === 0) return;
             const bounds = [];
             validResults.forEach(res => {
-                const [inputLat, inputLon] = res.values;
+                 let [inputLat, inputLon] = [NaN, NaN];
+                const inEllipsoid = config.ellipsoids[config.systems[dom.inputSystem.value].ellipsoid];
+
+                if(appState.inputCoord === 'GEO_DEC') {
+                    [inputLat, inputLon] = res.values;
+                } else if(appState.inputCoord === 'UTM') {
+                    const geo = utmToGeodetic(res.values[0], res.values[1], parseInt(res.values[2]), res.values[2].slice(-1).toUpperCase());
+                    inputLat = geo.lat;
+                    inputLon = geo.lon;
+                } else if(appState.inputCoord === 'CART') {
+                     const geo = cartesianToGeodetic(res.values[0], res.values[1], res.values[2], inEllipsoid);
+                     inputLat = geo.lat;
+                     inputLon = geo.lon;
+                }
+                
                 if (!isNaN(inputLat) && !isNaN(inputLon)) {
                     const marker = L.marker([inputLat, inputLon]).bindPopup(`<b>${res.name} (Entrada)</b><br>Lat: ${inputLat.toFixed(6)}<br>Lon: ${inputLon.toFixed(6)}`);
                     appState.inputMarkers.addLayer(marker);
@@ -795,13 +851,27 @@
         
         function exportData(format) {
             if (appState.results.length === 0) return;
-            const headers = Array.from(dom.resultsTableHead.querySelectorAll('th')).map(th => th.textContent);
+            
+            const inputConfig = config.coordTypes[appState.inputCoord];
+            const outputConfig = config.coordTypes[appState.outputCoord];
+            
+            let headers = ['Ponto'];
+            headers.push(...inputConfig.headers.map(h => `${h} (In)`));
+            headers.push(...outputConfig.headers.map(h => `${h} (Out)`));
+             if (config.systems[dom.inputSystem.value].type === 'Grade') {
+                headers.push('σLat (m)', 'σLon (m)');
+            }
+            
             let content = headers.join(format === 'csv' ? ',' : '\t') + '\n';
+            
             appState.results.forEach(res => {
                 const rowData = [res.name];
                 if (res.error) {
                     rowData.push('ERRO', res.error);
                 } else {
+                    res.values.forEach(val => {
+                         rowData.push(typeof val === 'number' ? val.toFixed(6) : val);
+                    });
                     res.output.forEach(val => {
                         rowData.push(typeof val === 'number' ? val.toFixed(6) : val);
                     });
